@@ -1,0 +1,1702 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Team Calendar · MGH Robotic Surgery PA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:#e8e6e1; --paper:#ffffff; --paper-warm:#fafaf7;
+      --ink:#1a2a33; --ink-2:#3a4a52; --muted:#6b7780;
+      --line:rgba(26,42,51,0.14); --line-strong:rgba(26,42,51,0.28);
+      --accent:#1f6b6b; --accent-soft:#e6efef; --accent-deep:#154f4f;
+      --pos:#2f7a4d; --neg:#b54545; --warn:#b8801f;
+      --cat-time-away:#1f6b6b;
+      --cat-events:#6b4a1f;
+      --cat-coverage:#3a4a7a;
+      --weekend-bg:#fafaf7;
+    }
+    *,*::before,*::after { box-sizing:border-box; }
+    html,body {
+      margin:0;padding:0;background:var(--bg);
+      font-family:'Inter',system-ui,sans-serif;color:var(--ink);
+      -webkit-font-smoothing:antialiased;
+      font-feature-settings:'tnum' 1;
+    }
+    .page {
+      max-width:1100px;margin:24px auto;background:var(--paper);
+      padding:32px 40px 28px;
+      box-shadow:0 8px 32px rgba(0,0,0,0.12),0 1px 3px rgba(0,0,0,0.06);
+      color:var(--ink);
+    }
+
+    /* ============ MASTHEAD ============ */
+    .masthead {
+      display:flex;justify-content:space-between;align-items:flex-end;
+      border-bottom:2px solid var(--ink);
+      padding-bottom:10px;margin-bottom:14px;gap:16px;
+    }
+    .mast-l { min-width:0; }
+    .eyebrow {
+      font-size:11px;letter-spacing:0.18em;text-transform:uppercase;
+      color:var(--accent);font-weight:600;margin-bottom:4px;
+    }
+    .masthead h1 {
+      font-family:'Source Serif 4',serif;
+      font-size:24px;font-weight:600;margin:0;line-height:1.1;
+      letter-spacing:-0.005em;
+    }
+    .masthead .sub {
+      font-size:12px;color:var(--ink-2);margin-top:4px;
+      display:flex;justify-content:flex-start;align-items:baseline;gap:14px;flex-wrap:wrap;
+    }
+    .masthead .sub strong { color:var(--ink);font-weight:600; }
+    .mast-r { display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end; }
+    .admin-pill {
+      display:inline-block;font-size:9px;letter-spacing:0.15em;text-transform:uppercase;
+      font-weight:600;color:var(--paper);background:var(--accent);
+      padding:2px 7px;border-radius:2px;margin-left:6px;vertical-align:1px;
+    }
+
+    /* ============ BUTTONS ============ */
+    button, .btn {
+      font-family:'Inter';font-size:12px;font-weight:500;letter-spacing:0.02em;
+      border:1px solid var(--ink);background:var(--paper);color:var(--ink);
+      padding:7px 14px;border-radius:2px;cursor:pointer;
+      transition:background 120ms ease,border-color 120ms ease,color 120ms ease;
+    }
+    button:hover:not(:disabled) { background:var(--ink);color:var(--paper); }
+    button.primary {
+      background:var(--accent);color:var(--paper);border-color:var(--accent);
+    }
+    button.primary:hover:not(:disabled) { background:var(--accent-deep);border-color:var(--accent-deep); }
+    button.ghost {
+      border-color:var(--line-strong);color:var(--ink-2);background:transparent;
+    }
+    button.ghost:hover:not(:disabled) { background:var(--ink);border-color:var(--ink);color:var(--paper); }
+    button.danger {
+      border-color:var(--neg);color:var(--neg);background:transparent;
+    }
+    button.danger:hover:not(:disabled) { background:var(--neg);color:var(--paper);border-color:var(--neg); }
+    button.success {
+      border-color:var(--pos);color:var(--pos);background:transparent;
+    }
+    button.success:hover:not(:disabled) { background:var(--pos);color:var(--paper);border-color:var(--pos); }
+    button:disabled { opacity:0.4;cursor:not-allowed; }
+    button:disabled:hover { background:var(--paper);color:var(--ink); }
+    button:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
+
+    /* ============ KPI STRIP ============ */
+    .kpis {
+      display:grid;grid-template-columns:repeat(4,1fr);
+      border:1px solid var(--line);border-radius:4px;
+      overflow:hidden;margin-bottom:16px;
+    }
+    .kpi { padding:10px 12px;border-right:1px solid var(--line);background:var(--paper); }
+    .kpi:last-child { border-right:none; }
+    .kpi .lbl {
+      font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
+      color:var(--muted);font-weight:600;margin-bottom:4px;
+    }
+    .kpi .val {
+      font-family:'Source Serif 4',serif;
+      font-size:29px;font-weight:600;line-height:1;
+      letter-spacing:-0.01em;
+    }
+    .kpi .val.pos { color:var(--pos); }
+    .kpi .val.neg { color:var(--neg); }
+    .kpi .val.warn { color:var(--warn); }
+    .kpi .val .u {
+      font-size:17px;color:var(--muted);
+      margin-right:1px;vertical-align:0.2em;
+    }
+    .kpi .sub { font-size:11px;color:var(--muted);margin-top:4px;line-height:1.3; }
+
+    /* ============ SECTION ============ */
+    .section { margin-bottom:16px; }
+    .section-head {
+      display:flex;align-items:baseline;gap:8px;
+      border-bottom:1px solid var(--line-strong);
+      padding-bottom:4px;margin-bottom:8px;
+    }
+    .section-head .tag {
+      font-size:10px;letter-spacing:0.15em;text-transform:uppercase;
+      color:var(--accent);font-weight:600;
+    }
+    .section-head h2 {
+      font-family:'Source Serif 4',serif;
+      font-size:15px;font-weight:600;margin:0;color:var(--ink);
+    }
+
+    /* ============ CALENDAR ============ */
+    .cal-toolbar {
+      display:flex;justify-content:space-between;align-items:center;
+      margin-bottom:8px;gap:12px;flex-wrap:wrap;
+    }
+    .cal-toolbar .month-nav {
+      display:flex;align-items:center;gap:12px;
+      font-family:'Source Serif 4',serif;
+      font-size:15px;font-weight:600;color:var(--ink);
+    }
+    .cal-toolbar .month-nav .mlabel { min-width:140px; }
+    .cal-toolbar .month-nav button {
+      width:26px;height:26px;padding:0;
+      border:1px solid var(--line-strong);background:var(--paper);
+      font-size:13px;cursor:pointer;color:var(--ink);
+      border-radius:2px;
+      display:inline-flex;align-items:center;justify-content:center;
+    }
+    .cal-toolbar .month-nav button:hover { background:var(--accent-soft);border-color:var(--accent);color:var(--ink); }
+    .cal-toolbar .today-btn {
+      font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
+      font-weight:600;padding:5px 10px;
+      border:1px solid var(--line-strong);background:var(--paper-warm);cursor:pointer;
+      border-radius:2px;color:var(--ink-2);
+    }
+    .cal-toolbar .today-btn:hover { background:var(--ink);color:var(--paper);border-color:var(--ink); }
+
+    .calendar {
+      border:1px solid var(--line-strong);
+      border-radius:2px;overflow:hidden;background:var(--paper);
+    }
+    .weekdays {
+      display:grid;grid-template-columns:repeat(7,1fr);
+      background:var(--paper-warm);
+      border-bottom:1px solid var(--line-strong);
+    }
+    .weekdays div {
+      font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
+      color:var(--ink-2);font-weight:600;
+      padding:8px 10px;text-align:left;
+    }
+    .cal-grid {
+      display:grid;grid-template-columns:repeat(7,1fr);
+      grid-auto-rows:minmax(98px,1fr);
+    }
+    .cell {
+      border-right:1px solid var(--line);
+      border-bottom:1px solid var(--line);
+      padding:6px 8px 8px;background:var(--paper);
+      display:flex;flex-direction:column;overflow:hidden;
+      cursor:default;
+    }
+    .cell:nth-child(7n) { border-right:none; }
+    .cell.weekend { background:var(--weekend-bg); }
+    .cell.outside { background:var(--paper-warm); }
+    .cell.outside .num { color:#b8b8b0; }
+    .cell .num {
+      font-size:11px;color:var(--ink-2);font-weight:500;
+      margin-bottom:5px;font-variant-numeric:tabular-nums;
+      align-self:flex-start;
+    }
+    .cell.today .num {
+      color:var(--paper);background:var(--accent);
+      width:20px;height:20px;
+      display:inline-flex;align-items:center;justify-content:center;
+      border-radius:50%;font-weight:600;
+    }
+    .cell-chips { display:flex;flex-direction:column;gap:0;min-width:0; }
+    .cell-more {
+      font-size:10px;color:var(--muted);font-weight:500;
+      padding:1px 4px;cursor:pointer;letter-spacing:0.02em;
+    }
+    .cell-more:hover { color:var(--accent); }
+    .cell.admin-can-add { cursor:pointer; }
+    .cell.admin-can-add:hover { background:var(--accent-soft); }
+
+    /* ============ CHIPS ============ */
+    .chip {
+      font-family:'Inter';font-size:11px;font-weight:500;line-height:1.25;
+      padding:3px 7px 3px 8px;border-radius:2px;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      cursor:pointer;display:flex;align-items:center;gap:5px;
+      margin-bottom:2px;
+      border-left:3px solid var(--cat-time-away);
+      background:var(--accent-soft);color:var(--ink);
+      transition:background 100ms ease;
+    }
+    .chip:hover { background:#d8e6e6; }
+    .chip .type-tag {
+      font-size:9px;letter-spacing:0.08em;text-transform:uppercase;
+      font-weight:600;color:var(--accent);flex-shrink:0;
+    }
+    .chip .dot {
+      width:7px;height:7px;border-radius:50%;flex-shrink:0;
+      background:var(--member-color,transparent);
+    }
+    .chip .label { overflow:hidden;text-overflow:ellipsis;min-width:0; }
+
+    .chip.cat-time-away { border-left-color:var(--cat-time-away);background:var(--accent-soft); }
+    .chip.cat-time-away .type-tag { color:var(--cat-time-away); }
+    .chip.cat-time-away:hover { background:#d8e6e6; }
+
+    .chip.cat-events { border-left-color:var(--cat-events);background:#f4ecdc; }
+    .chip.cat-events .type-tag { color:var(--cat-events); }
+    .chip.cat-events:hover { background:#ecdfc6; }
+
+    .chip.cat-coverage { border-left-color:var(--cat-coverage);background:#e8ecf4; }
+    .chip.cat-coverage .type-tag { color:var(--cat-coverage); }
+    .chip.cat-coverage:hover { background:#dce2ee; }
+
+    .chip.pending {
+      background-image:repeating-linear-gradient(
+        135deg,transparent 0 4px,rgba(26,42,51,0.06) 4px 8px);
+    }
+    .chip.denied { opacity:0.42;text-decoration:line-through; }
+    .chip.mine { outline:1px solid var(--accent);outline-offset:1px; }
+
+    /* ============ TABLES ============ */
+    table.grid {
+      width:100%;border-collapse:collapse;font-size:13px;
+      font-feature-settings:'tnum' 1;
+    }
+    table.grid th {
+      text-align:left;font-weight:600;color:var(--ink-2);
+      font-size:11px;letter-spacing:0.05em;text-transform:uppercase;
+      padding:6px 10px;
+      border-bottom:1px solid var(--line-strong);
+      background:var(--paper-warm);
+    }
+    table.grid td {
+      padding:6px 10px;border-bottom:1px solid var(--line);
+      vertical-align:baseline;
+    }
+    table.grid td.label { color:var(--ink-2); }
+    table.grid td.num { text-align:right;font-variant-numeric:tabular-nums; }
+    table.grid td.note { color:var(--muted);font-size:12px; }
+
+    /* ============ MODALS ============ */
+    .modal-backdrop {
+      position:fixed;inset:0;background:rgba(26,42,51,0.55);
+      display:none;align-items:center;justify-content:center;
+      z-index:100;padding:20px;
+    }
+    .modal-backdrop.open { display:flex; }
+    .modal {
+      background:var(--paper);max-width:480px;width:100%;
+      padding:28px 32px 24px;
+      box-shadow:0 30px 60px rgba(0,0,0,0.18),0 1px 3px rgba(0,0,0,0.06);
+      border:1px solid var(--line-strong);border-radius:2px;
+      max-height:calc(100vh - 40px);overflow-y:auto;
+    }
+    .modal.wide { max-width:560px; }
+    .modal .eyebrow {
+      font-size:10px;letter-spacing:0.15em;text-transform:uppercase;
+      color:var(--accent);font-weight:600;margin-bottom:4px;
+    }
+    .modal h2 {
+      font-family:'Source Serif 4',serif;
+      font-size:19px;font-weight:600;margin:0 0 4px;
+      color:var(--ink);letter-spacing:-0.005em;
+    }
+    .modal .modal-sub { font-size:12px;color:var(--muted);margin-bottom:18px; }
+    .field { margin-bottom:14px; }
+    .field-row { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
+    .field label {
+      display:block;
+      font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
+      color:var(--muted);font-weight:600;margin-bottom:5px;
+    }
+    .field input, .field select, .field textarea {
+      width:100%;
+      border:1px solid var(--line-strong);
+      padding:8px 11px;
+      font-family:'Inter';font-size:13px;
+      background:var(--paper);color:var(--ink);
+      border-radius:2px;
+    }
+    .field textarea { resize:vertical;min-height:60px; }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      outline:none;border-color:var(--accent);
+      box-shadow:0 0 0 3px var(--accent-soft);
+    }
+    .modal-actions {
+      display:flex;justify-content:flex-end;gap:8px;
+      margin-top:18px;padding-top:16px;
+      border-top:1px solid var(--line);flex-wrap:wrap;
+    }
+    .modal-actions .left { margin-right:auto; }
+
+    /* Big stat numeral in detail modal */
+    .day-count {
+      display:flex;align-items:baseline;gap:10px;margin:6px 0 14px;
+    }
+    .day-count .num {
+      font-family:'Source Serif 4',serif;
+      font-size:29px;font-weight:600;line-height:1;
+      letter-spacing:-0.01em;color:var(--ink);
+    }
+    .day-count .lbl {
+      font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
+      color:var(--muted);font-weight:600;
+    }
+
+    .pill {
+      display:inline-block;font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
+      font-weight:600;padding:2px 8px;border-radius:2px;
+      border:1px solid var(--line-strong);
+    }
+    .pill.approved { color:var(--pos);border-color:var(--pos);background:#ecf3ee; }
+    .pill.pending  { color:var(--ink-2);border-color:var(--line-strong);background:var(--paper-warm); }
+    .pill.denied   { color:var(--neg);border-color:var(--neg);background:#f5e2e2; }
+
+    /* ============ CONFLICT PREVIEW ============ */
+    .conflict-preview {
+      margin:8px 0 14px;padding:10px 12px;border-radius:2px;
+      font-size:12px;display:flex;gap:8px;align-items:flex-start;
+    }
+    .conflict-preview.clear  { background:#ecf3ee;color:var(--pos);border-left:3px solid var(--pos); }
+    .conflict-preview.watch  { background:#f5ecd9;color:#8b6010;border-left:3px solid var(--warn); }
+    .conflict-preview.block  { background:#f5e2e2;color:var(--neg);border-left:3px solid var(--neg); }
+    .conflict-preview .icon { font-weight:700;margin-top:1px; }
+    .conflict-preview ul { margin:4px 0 0;padding-left:18px; }
+
+    /* ============ TOAST ============ */
+    .toast {
+      position:fixed;bottom:28px;left:50%;
+      transform:translateX(-50%) translateY(20px);
+      background:var(--ink);color:var(--paper);
+      padding:10px 18px;font-size:12px;border-radius:2px;
+      font-weight:500;letter-spacing:0.02em;
+      z-index:200;opacity:0;
+      transition:opacity 200ms ease,transform 200ms ease;
+      pointer-events:none;
+      box-shadow:0 6px 20px rgba(0,0,0,0.18);
+    }
+    .toast.show { opacity:1;transform:translateX(-50%) translateY(0); }
+    .toast.error { background:var(--neg); }
+    .toast.success { background:var(--pos); }
+
+    /* ============ LEGEND ============ */
+    .legend-grid {
+      display:grid;grid-template-columns:1.2fr 1fr 1.6fr;gap:24px;
+      margin-top:18px;
+    }
+    .legend-block { min-width:0; }
+    .legend-block .legend-list {
+      display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0;
+    }
+    .legend-item {
+      display:flex;align-items:center;gap:8px;
+      font-size:12px;padding:3px 0;color:var(--ink);
+    }
+    .legend-item .dot {
+      width:9px;height:9px;border-radius:50%;flex-shrink:0;
+      border:1px solid rgba(26,42,51,0.1);
+    }
+    .legend-item .desc { font-size:11px;color:var(--muted);margin-left:4px; }
+    .legend-block .chip { display:inline-flex;cursor:default; }
+    .legend-block .chip:hover { background:inherit; }
+
+    /* ============ FOOTER ============ */
+    .footer {
+      margin-top:24px;padding-top:10px;
+      border-top:1px solid var(--line);
+      display:flex;justify-content:space-between;
+      font-size:10px;color:var(--muted);
+      letter-spacing:0.04em;flex-wrap:wrap;gap:10px;
+    }
+    .footer .offline { color:var(--neg); }
+
+    /* ============ ADMIN PANEL ============ */
+    .admin-panel {
+      background:var(--paper-warm);
+      border:1px solid var(--line-strong);
+      padding:14px 18px;border-radius:2px;
+      margin-bottom:16px;
+      display:flex;justify-content:space-between;align-items:center;
+      gap:12px;flex-wrap:wrap;
+    }
+    .admin-panel .left {
+      display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;
+    }
+    .admin-panel .pending-count {
+      font-family:'Source Serif 4',serif;font-size:18px;font-weight:600;color:var(--accent);
+    }
+
+    /* ============ EMPTY STATE ============ */
+    .empty-state {
+      text-align:center;color:var(--muted);font-size:12px;
+      padding:40px 20px;
+    }
+
+    /* ============ RESPONSIVE ============ */
+    @media (max-width:720px) {
+      .page { margin:0;padding:20px 18px;box-shadow:none; }
+      .masthead { flex-direction:column;align-items:flex-start;gap:10px; }
+      .mast-r { width:100%;justify-content:flex-start; }
+      .kpis { grid-template-columns:repeat(2,1fr); }
+      .kpi { border-right:1px solid var(--line);border-bottom:1px solid var(--line); }
+      .kpi:nth-child(even) { border-right:none; }
+      .kpi:nth-last-child(-n+2) { border-bottom:none; }
+      .cal-grid { grid-auto-rows:minmax(78px,1fr); }
+      .chip { font-size:10px;padding:2px 6px 2px 7px; }
+      .legend-grid { grid-template-columns:1fr; }
+      .field-row { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page" id="app" hidden>
+    <!-- MASTHEAD -->
+    <div class="masthead">
+      <div class="mast-l">
+        <div class="eyebrow">MG Surgical Associates · Robotic Surgery PA Team</div>
+        <h1>Team Calendar</h1>
+        <div class="sub">
+          <span>Signed in as <strong id="member-name">—</strong><span id="admin-badge" class="admin-pill" hidden>Admin</span></span>
+          <span class="mast-meta" id="today-label">—</span>
+        </div>
+      </div>
+      <div class="mast-r">
+        <button class="primary" id="btn-request">Request Time Away</button>
+        <button class="ghost" id="btn-add-entry" hidden>Add Entry</button>
+        <button class="ghost" id="btn-admin">Admin</button>
+        <button class="ghost" id="btn-signout">Sign Out</button>
+      </div>
+    </div>
+
+    <!-- KPI STRIP -->
+    <div class="kpis" id="kpis">
+      <div class="kpi"><div class="lbl">Days Off This Month</div><div class="val" id="kpi-month">0</div><div class="sub">approved time-away days</div></div>
+      <div class="kpi"><div class="lbl">Pending Requests</div><div class="val" id="kpi-pending">0</div><div class="sub" id="kpi-pending-sub">awaiting decision</div></div>
+      <div class="kpi"><div class="lbl">My PTO YTD</div><div class="val" id="kpi-mypto">0</div><div class="sub">approved days year-to-date</div></div>
+      <div class="kpi"><div class="lbl">Coverage Today</div><div class="val" id="kpi-coverage">—</div><div class="sub" id="kpi-coverage-sub">team available</div></div>
+    </div>
+
+    <!-- ADMIN PANEL -->
+    <div class="admin-panel" id="admin-panel" hidden>
+      <div class="left">
+        <span class="pending-count" id="admin-pending-count">0</span>
+        <span>pending request(s) — click any chip to decide.</span>
+      </div>
+      <div>
+        <button class="ghost" id="btn-admin-signout">End Admin Session</button>
+      </div>
+    </div>
+
+    <!-- CALENDAR -->
+    <div class="section">
+      <div class="section-head">
+        <span class="tag">Calendar</span>
+        <h2 id="month-heading">—</h2>
+      </div>
+      <div class="cal-toolbar">
+        <div class="month-nav">
+          <button id="btn-prev" aria-label="Previous month">‹</button>
+          <span class="mlabel" id="mlabel">—</span>
+          <button id="btn-next" aria-label="Next month">›</button>
+        </div>
+        <button class="today-btn" id="btn-today">Today</button>
+      </div>
+      <div class="calendar">
+        <div class="weekdays">
+          <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+      </div>
+    </div>
+
+    <!-- LEGEND -->
+    <div class="section">
+      <div class="section-head">
+        <span class="tag">Legend</span>
+        <h2>Reading the calendar</h2>
+      </div>
+      <div class="legend-grid">
+        <div class="legend-block">
+          <div class="section-head" style="border-bottom-color:var(--line);">
+            <span class="tag">Categories</span>
+            <h2>Entry types</h2>
+          </div>
+          <div class="legend-item">
+            <span class="chip cat-time-away" style="margin:0;"><span class="type-tag">PTO</span><span class="dot" style="--member-color:#1f6b6b"></span><span class="label">Time Away</span></span>
+            <span class="desc">PTO · CME · PD</span>
+          </div>
+          <div class="legend-item">
+            <span class="chip cat-events" style="margin:0;"><span class="type-tag">NOTE</span><span class="label">Events</span></span>
+            <span class="desc">Notes · Onboarding · Shadowing</span>
+          </div>
+          <div class="legend-item">
+            <span class="chip cat-coverage" style="margin:0;"><span class="type-tag">PER DIEM</span><span class="dot" style="--member-color:#3a4a7a"></span><span class="label">Coverage</span></span>
+            <span class="desc">Per Diem · Swap</span>
+          </div>
+        </div>
+        <div class="legend-block">
+          <div class="section-head" style="border-bottom-color:var(--line);">
+            <span class="tag">Status</span>
+            <h2>Decision state</h2>
+          </div>
+          <div class="legend-item">
+            <span class="chip cat-time-away" style="margin:0;"><span class="type-tag">PTO</span><span class="label">Approved</span></span>
+          </div>
+          <div class="legend-item">
+            <span class="chip cat-time-away pending" style="margin:0;"><span class="type-tag">PTO</span><span class="label">Pending</span></span>
+          </div>
+          <div class="legend-item">
+            <span class="chip cat-time-away denied" style="margin:0;"><span class="type-tag">PTO</span><span class="label">Denied</span></span>
+          </div>
+        </div>
+        <div class="legend-block">
+          <div class="section-head" style="border-bottom-color:var(--line);">
+            <span class="tag">Team</span>
+            <h2>Member colors</h2>
+          </div>
+          <div class="legend-list" id="legend-team"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+      <div>MGH Robotic Surgery PA Team · Calendar</div>
+      <div id="sync-status">—</div>
+    </div>
+  </div>
+
+  <!-- DETAIL MODAL -->
+  <div class="modal-backdrop" id="detail-backdrop" data-modal>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+      <div class="eyebrow" id="detail-eyebrow">Entry</div>
+      <h2 id="detail-title">—</h2>
+      <div class="modal-sub" id="detail-sub">—</div>
+      <div class="day-count">
+        <span class="num" id="detail-days">0</span>
+        <span class="lbl">day(s)</span>
+        <span class="pill" id="detail-status">—</span>
+      </div>
+      <table class="grid">
+        <tbody>
+          <tr><td class="label">Member</td><td id="detail-member">—</td></tr>
+          <tr><td class="label">Type</td><td id="detail-type">—</td></tr>
+          <tr><td class="label">Range</td><td id="detail-range">—</td></tr>
+          <tr><td class="label">Notes</td><td id="detail-notes" class="note">—</td></tr>
+          <tr><td class="label">Submitted</td><td id="detail-submitted">—</td></tr>
+          <tr><td class="label">Decided</td><td id="detail-decided">—</td></tr>
+        </tbody>
+      </table>
+      <div class="modal-actions">
+        <div class="left" id="detail-admin-actions" hidden>
+          <button class="danger" id="btn-delete">Delete</button>
+        </div>
+        <button class="ghost" id="btn-detail-close">Close</button>
+        <button class="ghost" id="btn-detail-edit" hidden>Edit</button>
+        <button class="ghost" id="btn-detail-reset" hidden>Reset to Pending</button>
+        <button class="danger" id="btn-detail-deny" hidden>Deny</button>
+        <button class="success" id="btn-detail-approve" hidden>Approve</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- REQUEST MODAL (member) -->
+  <div class="modal-backdrop" id="request-backdrop" data-modal>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="request-title">
+      <div class="eyebrow">Time Away</div>
+      <h2 id="request-title">Request Time Away</h2>
+      <div class="modal-sub">Submit a request for PTO, CME, or PD. You'll get an email when Mike decides.</div>
+
+      <form id="request-form">
+        <div class="field">
+          <label for="req-type">Type</label>
+          <select id="req-type" required>
+            <option value="pto">PTO — Paid Time Off</option>
+            <option value="cme">CME — Continuing Medical Education</option>
+            <option value="pd">PD — Personal Day</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="req-start">Start date</label>
+            <input id="req-start" type="date" required />
+          </div>
+          <div class="field">
+            <label for="req-end">End date</label>
+            <input id="req-end" type="date" required />
+          </div>
+        </div>
+
+        <div class="conflict-preview" id="req-preview" hidden></div>
+
+        <div class="field">
+          <label for="req-notes">Notes (optional)</label>
+          <textarea id="req-notes" maxlength="500" placeholder="Anything Mike should know"></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="ghost" id="btn-req-cancel">Cancel</button>
+          <button type="submit" class="primary" id="btn-req-submit">Submit Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ADMIN ADD MODAL -->
+  <div class="modal-backdrop" id="add-backdrop" data-modal>
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="add-title">
+      <div class="eyebrow">Admin · Direct Create</div>
+      <h2 id="add-title">Add Entry</h2>
+      <div class="modal-sub">No conflict checks — admin override applies.</div>
+
+      <form id="add-form">
+        <div class="field-row">
+          <div class="field">
+            <label for="add-category">Category</label>
+            <select id="add-category" required>
+              <option value="time_away">Time Away</option>
+              <option value="events">Events</option>
+              <option value="coverage_adds">Coverage Adds</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="add-type">Type</label>
+            <select id="add-type" required></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="add-member">Member</label>
+          <select id="add-member"></select>
+        </div>
+        <div class="field" id="add-title-field">
+          <label for="add-title-input">Title (required if no member)</label>
+          <input id="add-title-input" type="text" maxlength="120" />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="add-start">Start date</label>
+            <input id="add-start" type="date" required />
+          </div>
+          <div class="field">
+            <label for="add-end">End date</label>
+            <input id="add-end" type="date" required />
+          </div>
+        </div>
+        <div class="field">
+          <label for="add-status">Status</label>
+          <select id="add-status">
+            <option value="approved">Approved</option>
+            <option value="pending">Pending</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="add-notes">Notes (optional)</label>
+          <textarea id="add-notes" maxlength="500"></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="ghost" id="btn-add-cancel">Cancel</button>
+          <button type="submit" class="primary" id="btn-add-submit">Create Entry</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- EDIT MODAL (admin) — re-uses same fields -->
+  <div class="modal-backdrop" id="edit-backdrop" data-modal>
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+      <div class="eyebrow">Admin · Edit</div>
+      <h2 id="edit-title">Edit Entry</h2>
+      <div class="modal-sub">All fields editable. Changes save immediately on submit.</div>
+
+      <form id="edit-form">
+        <div class="field-row">
+          <div class="field">
+            <label for="edit-category">Category</label>
+            <select id="edit-category" required>
+              <option value="time_away">Time Away</option>
+              <option value="events">Events</option>
+              <option value="coverage_adds">Coverage Adds</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="edit-type">Type</label>
+            <select id="edit-type" required></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="edit-member">Member</label>
+          <select id="edit-member"></select>
+        </div>
+        <div class="field">
+          <label for="edit-title-input">Title</label>
+          <input id="edit-title-input" type="text" maxlength="120" />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="edit-start">Start date</label>
+            <input id="edit-start" type="date" required />
+          </div>
+          <div class="field">
+            <label for="edit-end">End date</label>
+            <input id="edit-end" type="date" required />
+          </div>
+        </div>
+        <div class="field">
+          <label for="edit-status">Status</label>
+          <select id="edit-status">
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="denied">Denied</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="edit-notes">Notes</label>
+          <textarea id="edit-notes" maxlength="500"></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="ghost" id="btn-edit-cancel">Cancel</button>
+          <button type="submit" class="primary" id="btn-edit-submit">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ADMIN LOGIN MODAL -->
+  <div class="modal-backdrop" id="adminlogin-backdrop" data-modal>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="adminlogin-title">
+      <div class="eyebrow">Admin Sign In</div>
+      <h2 id="adminlogin-title">Admin Access</h2>
+      <div class="modal-sub">Enter the shared admin password. Session ends when you close this tab.</div>
+
+      <form id="adminlogin-form">
+        <div class="field">
+          <label for="adminlogin-password">Password</label>
+          <input id="adminlogin-password" type="password" required autocomplete="current-password" />
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="ghost" id="btn-adminlogin-cancel">Cancel</button>
+          <button type="submit" class="primary" id="btn-adminlogin-submit">Sign In</button>
+        </div>
+        <div class="login-msg" id="adminlogin-msg" style="font-size:12px;margin-top:10px;color:var(--neg);"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- CONFIRM MODAL (override etc.) -->
+  <div class="modal-backdrop" id="confirm-backdrop" data-modal>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div class="eyebrow" id="confirm-eyebrow">Confirm</div>
+      <h2 id="confirm-title">Are you sure?</h2>
+      <div class="modal-sub" id="confirm-sub">—</div>
+      <div id="confirm-body"></div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="btn-confirm-cancel">Cancel</button>
+        <button type="button" class="primary" id="btn-confirm-ok">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    /* ============================================================
+     * STATE
+     * ============================================================ */
+    const state = {
+      supabase: null,
+      session: null,
+      me: null,                  // team_members row for current user
+      members: [],
+      entries: [],
+      viewMonth: new Date(),     // 1st-of-month for the visible grid
+      adminToken: sessionStorage.getItem('admin_token') || null,
+      detailEntry: null,
+    };
+    state.viewMonth.setDate(1);
+    state.viewMonth.setHours(0, 0, 0, 0);
+
+    /* ============================================================
+     * CONSTANTS
+     * ============================================================ */
+    const TYPE_META = {
+      pto:      { tag:'PTO',      label:'PTO',         category:'time_away' },
+      cme:      { tag:'CME',      label:'CME',         category:'time_away' },
+      pd:       { tag:'PD',       label:'PD',          category:'time_away' },
+      note:     { tag:'NOTE',     label:'Note',        category:'events' },
+      onb:      { tag:'ONB',      label:'Onboarding',  category:'events' },
+      shd:      { tag:'SHD',      label:'Shadowing',   category:'events' },
+      per_diem: { tag:'PER DIEM', label:'Per Diem',    category:'coverage_adds' },
+      swp:      { tag:'SWAP',     label:'Swap',        category:'coverage_adds' },
+    };
+    const CATEGORY_TYPES = {
+      time_away:    ['pto', 'cme', 'pd'],
+      events:       ['note', 'onb', 'shd'],
+      coverage_adds:['per_diem', 'swp'],
+    };
+    const TIME_AWAY_TYPES = CATEGORY_TYPES.time_away;
+    const STATUS_LABEL = { approved:'Approved', pending:'Pending', denied:'Denied' };
+
+    /* ============================================================
+     * INIT (auth guard runs before render)
+     * ============================================================ */
+    (async function init() {
+      try {
+        const r = await fetch('/api/env');
+        const env = await r.json();
+        if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+          document.body.innerHTML =
+            '<div style="max-width:480px;margin:80px auto;padding:32px;background:#fff;font-family:Inter,sans-serif;color:#b54545;">Configuration error: Supabase env not set on the server.</div>';
+          return;
+        }
+        state.supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
+
+        const { data: sessionData } = await state.supabase.auth.getSession();
+        if (!sessionData?.session) {
+          window.location.replace('/login.html');
+          return;
+        }
+        state.session = sessionData.session;
+
+        await loadMembers();
+        const meEmail = sessionData.session.user.email;
+        state.me = state.members.find(m => m.email.toLowerCase() === (meEmail || '').toLowerCase()
+                                     || m.auth_user_id === sessionData.session.user.id);
+        if (!state.me) {
+          await state.supabase.auth.signOut();
+          window.location.replace('/login.html');
+          return;
+        }
+
+        await loadEntries();
+        bindStaticHandlers();
+        refreshAdminUi();
+        renderAll();
+        document.getElementById('app').hidden = false;
+
+        state.supabase.auth.onAuthStateChange((event) => {
+          if (event === 'SIGNED_OUT') window.location.replace('/login.html');
+        });
+      } catch (e) {
+        console.error('init', e);
+        toast('Failed to load. Refresh to retry.', 'error');
+      }
+    })();
+
+    /* ============================================================
+     * DATA
+     * ============================================================ */
+    async function loadMembers() {
+      const { data, error } = await state.supabase
+        .from('team_members')
+        .select('id, name, email, color, active, auth_user_id')
+        .order('name');
+      if (error) throw error;
+      state.members = data || [];
+    }
+
+    async function loadEntries() {
+      const { data, error } = await state.supabase
+        .from('calendar_entries')
+        .select('*')
+        .order('start_date');
+      if (error) throw error;
+      state.entries = data || [];
+      setSync(`Last sync ${new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`);
+    }
+
+    async function refresh() {
+      try {
+        await loadEntries();
+        renderAll();
+      } catch (e) {
+        console.error('refresh', e);
+        setSync('Connection lost — refresh to retry', true);
+      }
+    }
+
+    /* ============================================================
+     * UI BINDINGS
+     * ============================================================ */
+    function refreshAdminUi() {
+      const isAdmin = isAdminMode();
+      document.getElementById('member-name').textContent = state.me.name;
+      document.getElementById('today-label').textContent = todayLabel();
+      document.getElementById('admin-badge').hidden = !isAdmin;
+      document.getElementById('btn-add-entry').hidden = !isAdmin;
+      document.getElementById('admin-panel').hidden = !isAdmin;
+    }
+
+    // Bound exactly once at init. All admin-mode toggles re-render via refreshAdminUi().
+    function bindStaticHandlers() {
+      document.getElementById('btn-prev').onclick  = () => stepMonth(-1);
+      document.getElementById('btn-next').onclick  = () => stepMonth(1);
+      document.getElementById('btn-today').onclick = () => { state.viewMonth = firstOfMonth(new Date()); renderAll(); };
+      document.getElementById('btn-request').onclick   = openRequestModal;
+      document.getElementById('btn-add-entry').onclick = openAddModal;
+      document.getElementById('btn-admin').onclick     = openAdminLogin;
+      document.getElementById('btn-signout').onclick   = signOut;
+      document.getElementById('btn-admin-signout').onclick = endAdminSession;
+
+      // Modal close on ESC + backdrop click + close-button.
+      document.querySelectorAll('[data-modal]').forEach(b => {
+        b.addEventListener('click', (e) => { if (e.target === b) b.classList.remove('open'); });
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') document.querySelectorAll('.modal-backdrop.open').forEach(b => b.classList.remove('open'));
+      });
+      document.getElementById('btn-detail-close').onclick   = () => closeModal('detail-backdrop');
+      document.getElementById('btn-req-cancel').onclick     = () => closeModal('request-backdrop');
+      document.getElementById('btn-add-cancel').onclick     = () => closeModal('add-backdrop');
+      document.getElementById('btn-edit-cancel').onclick    = () => closeModal('edit-backdrop');
+      document.getElementById('btn-adminlogin-cancel').onclick = () => closeModal('adminlogin-backdrop');
+
+      // Request form
+      const reqForm = document.getElementById('request-form');
+      const reqStart = document.getElementById('req-start');
+      const reqEnd = document.getElementById('req-end');
+      const reqType = document.getElementById('req-type');
+      const updatePreview = () => updateRequestPreview();
+      reqStart.addEventListener('change', () => {
+        if (!reqEnd.value || reqEnd.value < reqStart.value) reqEnd.value = reqStart.value;
+        updatePreview();
+      });
+      reqEnd.addEventListener('change', updatePreview);
+      reqType.addEventListener('change', updatePreview);
+      reqForm.addEventListener('submit', submitRequest);
+
+      // Admin login form
+      document.getElementById('adminlogin-form').addEventListener('submit', submitAdminLogin);
+
+      // Admin add form
+      const addCat = document.getElementById('add-category');
+      addCat.addEventListener('change', () => populateTypeSelect('add-category', 'add-type'));
+      populateTypeSelect('add-category', 'add-type');
+      populateMemberSelect('add-member', true);
+      document.getElementById('add-form').addEventListener('submit', submitAdminCreate);
+
+      // Admin edit form
+      const editCat = document.getElementById('edit-category');
+      editCat.addEventListener('change', () => populateTypeSelect('edit-category', 'edit-type'));
+      populateMemberSelect('edit-member', true);
+      document.getElementById('edit-form').addEventListener('submit', submitAdminEdit);
+
+      // Detail action buttons
+      document.getElementById('btn-detail-approve').onclick = () => decideEntry('approved');
+      document.getElementById('btn-detail-deny').onclick    = () => decideEntry('denied');
+      document.getElementById('btn-detail-reset').onclick   = () => decideEntry('pending');
+      document.getElementById('btn-detail-edit').onclick    = openEditFromDetail;
+      document.getElementById('btn-delete').onclick         = deleteEntry;
+    }
+
+    function isAdminMode() { return !!state.adminToken; }
+
+    function todayLabel() {
+      return new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+    }
+
+    /* ============================================================
+     * RENDER
+     * ============================================================ */
+    function renderAll() {
+      renderKpis();
+      renderCalendar();
+      renderLegend();
+      renderAdminPanel();
+    }
+
+    function renderAdminPanel() {
+      if (!isAdminMode()) return;
+      const pending = state.entries.filter(e => e.status === 'pending').length;
+      document.getElementById('admin-pending-count').textContent = pending;
+    }
+
+    function renderKpis() {
+      const month = state.viewMonth;
+      const monthStart = ymd(firstOfMonth(month));
+      const monthEnd   = ymd(lastOfMonth(month));
+      let monthDays = 0, pending = 0, myYTD = 0, today = ymd(new Date());
+      const yearStart = `${new Date().getFullYear()}-01-01`;
+      const yearEnd   = `${new Date().getFullYear()}-12-31`;
+
+      for (const e of state.entries) {
+        if (e.status === 'pending') pending++;
+        if (TIME_AWAY_TYPES.includes(e.event_type) && e.member_id) {
+          if (e.status === 'approved') {
+            monthDays += daysOverlap(e.start_date, e.end_date, monthStart, monthEnd);
+            if (e.member_id === state.me.id) {
+              myYTD += daysOverlap(e.start_date, e.end_date, yearStart, yearEnd);
+            }
+          }
+        }
+      }
+
+      const offToday = new Set();
+      for (const e of state.entries) {
+        if (TIME_AWAY_TYPES.includes(e.event_type)
+            && e.status === 'approved'
+            && e.member_id
+            && today >= e.start_date && today <= e.end_date) {
+          offToday.add(e.member_id);
+        }
+      }
+      const teamSize = state.members.filter(m => m.active).length;
+      const available = Math.max(0, teamSize - offToday.size);
+      const pct = teamSize > 0 ? Math.round((available / teamSize) * 100) : 0;
+
+      document.getElementById('kpi-month').textContent = monthDays;
+      const pendingEl = document.getElementById('kpi-pending');
+      pendingEl.textContent = pending;
+      pendingEl.classList.toggle('pos', pending === 0);
+      document.getElementById('kpi-pending-sub').textContent = pending === 0 ? 'all clear' : 'awaiting decision';
+      document.getElementById('kpi-mypto').textContent = myYTD;
+
+      const covEl = document.getElementById('kpi-coverage');
+      covEl.textContent = teamSize === 0 ? '—' : `${pct}%`;
+      covEl.classList.remove('pos','warn','neg');
+      if (teamSize > 0) {
+        if (pct >= 80) covEl.classList.add('pos');
+        else if (pct >= 60) covEl.classList.add('warn');
+        else covEl.classList.add('neg');
+      }
+      document.getElementById('kpi-coverage-sub').textContent =
+        teamSize === 0 ? '—' : `${available} of ${teamSize} available`;
+    }
+
+    function renderCalendar() {
+      const m = state.viewMonth;
+      const heading = m.toLocaleDateString('en-US', { month:'long', year:'numeric' });
+      document.getElementById('month-heading').textContent = heading;
+      document.getElementById('mlabel').textContent = heading;
+
+      const grid = document.getElementById('cal-grid');
+      grid.innerHTML = '';
+
+      const first = firstOfMonth(m);
+      const startWeekday = first.getDay();
+      const daysInMonth = lastOfMonth(m).getDate();
+      const cells = [];
+
+      // Lead-in (previous month tail)
+      const prevMonth = new Date(m); prevMonth.setMonth(prevMonth.getMonth() - 1);
+      const prevDays = lastOfMonth(prevMonth).getDate();
+      for (let i = startWeekday - 1; i >= 0; i--) {
+        const d = new Date(prevMonth); d.setDate(prevDays - i);
+        cells.push({ date:d, outside:true });
+      }
+      // Current month
+      for (let d = 1; d <= daysInMonth; d++) {
+        cells.push({ date:new Date(m.getFullYear(), m.getMonth(), d), outside:false });
+      }
+      // Tail
+      while (cells.length % 7 !== 0) {
+        const last = cells[cells.length - 1].date;
+        const next = new Date(last); next.setDate(last.getDate() + 1);
+        cells.push({ date:next, outside:true });
+      }
+      while (cells.length < 42) {
+        const last = cells[cells.length - 1].date;
+        const next = new Date(last); next.setDate(last.getDate() + 1);
+        cells.push({ date:next, outside:true });
+      }
+
+      const todayStr = ymd(new Date());
+      const isAdmin = isAdminMode();
+
+      for (const c of cells) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        const dayStr = ymd(c.date);
+        if (c.outside) cell.classList.add('outside');
+        if ([0,6].includes(c.date.getDay())) cell.classList.add('weekend');
+        if (dayStr === todayStr) cell.classList.add('today');
+
+        const num = document.createElement('div');
+        num.className = 'num';
+        num.textContent = c.date.getDate();
+        cell.appendChild(num);
+
+        const chips = document.createElement('div');
+        chips.className = 'cell-chips';
+        cell.appendChild(chips);
+
+        const dayEntries = entriesOn(dayStr);
+        const sorted = [...dayEntries].sort((a, b) => {
+          const ca = TYPE_META[a.event_type]?.category || 'zzz';
+          const cb = TYPE_META[b.event_type]?.category || 'zzz';
+          if (ca !== cb) return ca.localeCompare(cb);
+          return (a.start_date || '').localeCompare(b.start_date || '');
+        });
+        const max = 3;
+        const visible = sorted.slice(0, max);
+        const hidden = sorted.length - visible.length;
+        for (const e of visible) chips.appendChild(renderChip(e));
+        if (hidden > 0) {
+          const more = document.createElement('div');
+          more.className = 'cell-more';
+          more.textContent = `+${hidden} more`;
+          more.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            // Open the first hidden entry's detail; user can navigate from there.
+            openDetail(sorted[max]);
+          });
+          chips.appendChild(more);
+        }
+
+        if (isAdmin && !c.outside) {
+          cell.classList.add('admin-can-add');
+          cell.addEventListener('click', (ev) => {
+            if (ev.target.closest('.chip') || ev.target.closest('.cell-more')) return;
+            openAddModal({ defaultDate: dayStr });
+          });
+        }
+        grid.appendChild(cell);
+      }
+    }
+
+    function renderChip(entry) {
+      const meta = TYPE_META[entry.event_type] || { tag:'?', label:'?', category:'time_away' };
+      const catClass = meta.category === 'time_away' ? 'cat-time-away'
+                     : meta.category === 'events'    ? 'cat-events'
+                     : 'cat-coverage';
+      const chip = document.createElement('span');
+      chip.className = `chip ${catClass} ${entry.status}`;
+      if (entry.member_id === state.me?.id) chip.classList.add('mine');
+
+      const member = entry.member_id ? state.members.find(m => m.id === entry.member_id) : null;
+      const name = member ? member.name.split(' ')[0] : (entry.title || 'Team');
+      const color = member?.color || 'transparent';
+
+      chip.innerHTML = `
+        <span class="type-tag">${meta.tag}</span>
+        ${member ? `<span class="dot" style="--member-color:${color}"></span>` : ''}
+        <span class="label">${escapeHtml(name)}</span>
+      `;
+      chip.addEventListener('click', (ev) => { ev.stopPropagation(); openDetail(entry); });
+      return chip;
+    }
+
+    function renderLegend() {
+      const list = document.getElementById('legend-team');
+      list.innerHTML = '';
+      for (const m of state.members.filter(x => x.active)) {
+        const item = document.createElement('div');
+        item.className = 'legend-item';
+        item.innerHTML = `<span class="dot" style="background:${m.color}"></span>${escapeHtml(m.name)}`;
+        list.appendChild(item);
+      }
+    }
+
+    /* ============================================================
+     * REQUEST FLOW (member)
+     * ============================================================ */
+    function openRequestModal() {
+      const t = ymd(new Date());
+      document.getElementById('req-type').value = 'pto';
+      document.getElementById('req-start').value = t;
+      document.getElementById('req-end').value = t;
+      document.getElementById('req-notes').value = '';
+      document.getElementById('req-preview').hidden = true;
+      document.getElementById('btn-req-submit').disabled = false;
+      openModal('request-backdrop');
+      updateRequestPreview();
+    }
+
+    function updateRequestPreview() {
+      const start = document.getElementById('req-start').value;
+      const end = document.getElementById('req-end').value;
+      const previewEl = document.getElementById('req-preview');
+      const submitBtn = document.getElementById('btn-req-submit');
+      if (!start || !end || end < start) {
+        previewEl.hidden = true;
+        submitBtn.disabled = !start || !end || end < start;
+        return;
+      }
+      const days = expandRange(start, end);
+      const offByDay = new Map();
+      for (const day of days) offByDay.set(day, new Map());
+
+      for (const e of state.entries) {
+        if (!TIME_AWAY_TYPES.includes(e.event_type)) continue;
+        if (!['approved','pending'].includes(e.status)) continue;
+        if (!e.member_id || e.member_id === state.me.id) continue;
+        for (const day of days) {
+          if (day >= e.start_date && day <= e.end_date) {
+            const m = offByDay.get(day);
+            if (!m.has(e.member_id)) {
+              const member = state.members.find(x => x.id === e.member_id);
+              m.set(e.member_id, member?.name || 'Unknown');
+            }
+          }
+        }
+      }
+      const dayCounts = days.map(d => ({
+        day:d, count:offByDay.get(d).size,
+        names:Array.from(offByDay.get(d).values()).sort()
+      }));
+      const blocked = dayCounts.filter(d => d.count >= 2);
+      const overlap = dayCounts.filter(d => d.count >= 1);
+
+      let state_, html;
+      if (blocked.length > 0) {
+        state_ = 'block';
+        html = `<div class="icon">✕</div><div><strong>Blocked.</strong> Two or more team members are already off on these days:<ul>${blocked.map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml(b.names.join(', '))}</li>`).join('')}</ul></div>`;
+      } else if (days.length >= 2 && overlap.length > 0) {
+        state_ = 'block';
+        html = `<div class="icon">✕</div><div><strong>Blocked.</strong> Multi-day requests require all days to be clear. Conflict on:<ul>${overlap.map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml(b.names.join(', '))}</li>`).join('')}</ul></div>`;
+      } else if (days.length === 1 && overlap.length > 0) {
+        state_ = 'watch';
+        html = `<div class="icon">!</div><div><strong>Single-day double-up.</strong> ${overlap[0].count} person${overlap[0].count===1?'':'s'} already off (${escapeHtml(overlap[0].names.join(', '))}). Submission allowed; admin will decide.</div>`;
+      } else {
+        state_ = 'clear';
+        html = `<div class="icon">✓</div><div><strong>All clear.</strong> No conflicts on the requested ${days.length === 1 ? 'day' : 'days'}.</div>`;
+      }
+      previewEl.hidden = false;
+      previewEl.className = `conflict-preview ${state_}`;
+      previewEl.innerHTML = html;
+      submitBtn.disabled = (state_ === 'block');
+    }
+
+    async function submitRequest(ev) {
+      ev.preventDefault();
+      const btn = document.getElementById('btn-req-submit');
+      btn.disabled = true;
+      const body = {
+        event_type: document.getElementById('req-type').value,
+        start_date: document.getElementById('req-start').value,
+        end_date:   document.getElementById('req-end').value,
+        notes:      document.getElementById('req-notes').value.trim() || null,
+      };
+      try {
+        const jwt = state.session?.access_token;
+        const r = await fetch('/api/submit-request', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${jwt}`,
+          },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        if (r.status === 409) {
+          const previewEl = document.getElementById('req-preview');
+          previewEl.hidden = false;
+          previewEl.className = 'conflict-preview block';
+          const items = (j.blocked_days || []).map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml((b.names || []).join(', '))}</li>`).join('');
+          previewEl.innerHTML = `<div class="icon">✕</div><div><strong>Server rejected request.</strong>${items ? `<ul>${items}</ul>` : ''}</div>`;
+          btn.disabled = true;
+          return;
+        }
+        if (!r.ok) throw new Error(j.error || 'failed');
+        toast('Request submitted — Mike has been notified.', 'success');
+        closeModal('request-backdrop');
+        await refresh();
+      } catch (err) {
+        console.error(err);
+        toast('Could not submit. Try again.', 'error');
+        btn.disabled = false;
+      }
+    }
+
+    /* ============================================================
+     * DETAIL MODAL
+     * ============================================================ */
+    function openDetail(entry) {
+      state.detailEntry = entry;
+      const member = entry.member_id ? state.members.find(m => m.id === entry.member_id) : null;
+      const meta = TYPE_META[entry.event_type] || {};
+      const days = expandRange(entry.start_date, entry.end_date).length;
+      const range = entry.start_date === entry.end_date
+        ? formatDayLong(entry.start_date)
+        : `${formatDayLong(entry.start_date)} → ${formatDayLong(entry.end_date)}`;
+
+      document.getElementById('detail-eyebrow').textContent =
+        meta.category === 'time_away' ? 'Time Away'
+        : meta.category === 'events' ? 'Event'
+        : 'Coverage';
+      document.getElementById('detail-title').textContent =
+        entry.title || (member ? `${meta.label} — ${member.name}` : meta.label);
+      document.getElementById('detail-sub').textContent = range;
+      document.getElementById('detail-days').textContent = days;
+      const statusEl = document.getElementById('detail-status');
+      statusEl.textContent = STATUS_LABEL[entry.status] || entry.status;
+      statusEl.className = `pill ${entry.status}`;
+
+      document.getElementById('detail-member').textContent = member ? member.name : 'Team-wide';
+      document.getElementById('detail-type').textContent = meta.label || entry.event_type;
+      document.getElementById('detail-range').textContent = range;
+      document.getElementById('detail-notes').textContent = entry.notes || '—';
+      document.getElementById('detail-submitted').textContent = formatTimestamp(entry.requested_at);
+      document.getElementById('detail-decided').textContent =
+        entry.decided_at ? `${formatTimestamp(entry.decided_at)}${entry.decided_by ? ' · ' + entry.decided_by : ''}` : '—';
+
+      const isAdmin = isAdminMode();
+      document.getElementById('detail-admin-actions').hidden = !isAdmin;
+      document.getElementById('btn-detail-edit').hidden = !isAdmin;
+      document.getElementById('btn-detail-approve').hidden = !(isAdmin && entry.status !== 'approved');
+      document.getElementById('btn-detail-deny').hidden    = !(isAdmin && entry.status !== 'denied');
+      document.getElementById('btn-detail-reset').hidden   = !(isAdmin && entry.status !== 'pending');
+
+      openModal('detail-backdrop');
+    }
+
+    /* ============================================================
+     * ADMIN
+     * ============================================================ */
+    function openAdminLogin() {
+      if (isAdminMode()) {
+        toast('Admin session already active.', 'success');
+        return;
+      }
+      document.getElementById('adminlogin-password').value = '';
+      document.getElementById('adminlogin-msg').textContent = '';
+      openModal('adminlogin-backdrop');
+      setTimeout(() => document.getElementById('adminlogin-password').focus(), 50);
+    }
+
+    async function submitAdminLogin(ev) {
+      ev.preventDefault();
+      const password = document.getElementById('adminlogin-password').value;
+      const msg = document.getElementById('adminlogin-msg');
+      msg.textContent = '';
+      const btn = document.getElementById('btn-adminlogin-submit');
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/admin-verify', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ password }),
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          msg.textContent = j.error === 'invalid_password' ? 'Wrong password.' : (j.error || 'Could not sign in.');
+          btn.disabled = false;
+          return;
+        }
+        state.adminToken = j.token;
+        sessionStorage.setItem('admin_token', j.token);
+        closeModal('adminlogin-backdrop');
+        refreshAdminUi();
+        renderAll();
+        toast('Admin session active.', 'success');
+      } catch (err) {
+        console.error(err);
+        msg.textContent = 'Network error. Try again.';
+        btn.disabled = false;
+      }
+    }
+
+    function endAdminSession() {
+      state.adminToken = null;
+      sessionStorage.removeItem('admin_token');
+      refreshAdminUi();
+      renderAll();
+      toast('Admin session ended.', 'success');
+    }
+
+    async function decideEntry(status) {
+      const entry = state.detailEntry;
+      if (!entry) return;
+      await callDecide(entry.id, status, false);
+    }
+
+    async function callDecide(id, status, override) {
+      try {
+        const r = await fetch('/api/admin-decide', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ token: state.adminToken, id, status, override }),
+        });
+        const j = await r.json();
+        if (r.status === 401) { adminTokenExpired(); return; }
+        if (r.status === 409 && j.override_available) {
+          const items = (j.blocked_days || []).map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml((b.names || []).join(', '))}</li>`).join('');
+          openConfirm({
+            eyebrow: 'Conflict',
+            title: 'Approving creates a conflict',
+            sub: 'This approval overlaps with already-approved time away. You can override and approve anyway.',
+            bodyHtml: `<div class="conflict-preview block" style="margin-bottom:0;"><div class="icon">!</div><div><strong>Conflicts:</strong><ul>${items}</ul></div></div>`,
+            confirmText: 'Override & Approve',
+            danger: false,
+            onConfirm: async () => { await callDecide(id, status, true); },
+          });
+          return;
+        }
+        if (!r.ok) throw new Error(j.error || 'failed');
+        closeModal('detail-backdrop');
+        toast(`Marked ${status}.`, 'success');
+        await refresh();
+      } catch (err) {
+        console.error(err);
+        toast('Action failed. Try again.', 'error');
+      }
+    }
+
+    async function deleteEntry() {
+      const entry = state.detailEntry;
+      if (!entry) return;
+      openConfirm({
+        eyebrow: 'Delete',
+        title: 'Delete this entry?',
+        sub: 'This cannot be undone.',
+        bodyHtml: '',
+        confirmText: 'Delete',
+        danger: true,
+        onConfirm: async () => {
+          try {
+            const r = await fetch('/api/admin-delete', {
+              method:'POST',
+              headers:{ 'Content-Type':'application/json' },
+              body: JSON.stringify({ token: state.adminToken, id: entry.id }),
+            });
+            const j = await r.json();
+            if (r.status === 401) { adminTokenExpired(); return; }
+            if (!r.ok) throw new Error(j.error || 'failed');
+            closeModal('detail-backdrop');
+            toast('Entry deleted.', 'success');
+            await refresh();
+          } catch (err) {
+            console.error(err);
+            toast('Delete failed. Try again.', 'error');
+          }
+        },
+      });
+    }
+
+    function openAddModal(opts = {}) {
+      document.getElementById('add-category').value = 'time_away';
+      populateTypeSelect('add-category', 'add-type');
+      document.getElementById('add-member').value = '';
+      document.getElementById('add-title-input').value = '';
+      const t = opts.defaultDate || ymd(new Date());
+      document.getElementById('add-start').value = t;
+      document.getElementById('add-end').value = t;
+      document.getElementById('add-status').value = 'approved';
+      document.getElementById('add-notes').value = '';
+      openModal('add-backdrop');
+    }
+
+    async function submitAdminCreate(ev) {
+      ev.preventDefault();
+      const btn = document.getElementById('btn-add-submit');
+      btn.disabled = true;
+      const member_id = document.getElementById('add-member').value || null;
+      const title = document.getElementById('add-title-input').value.trim();
+      const entry = {
+        member_id,
+        event_type: document.getElementById('add-type').value,
+        title: title || null,
+        start_date: document.getElementById('add-start').value,
+        end_date:   document.getElementById('add-end').value,
+        status:     document.getElementById('add-status').value,
+        notes:      document.getElementById('add-notes').value.trim() || null,
+      };
+      if (!member_id && !entry.title) {
+        toast('Pick a member or enter a title.', 'error');
+        btn.disabled = false;
+        return;
+      }
+      if (entry.end_date < entry.start_date) {
+        toast('End date must be on or after start date.', 'error');
+        btn.disabled = false;
+        return;
+      }
+      try {
+        const r = await fetch('/api/admin-create', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ token: state.adminToken, entry }),
+        });
+        const j = await r.json();
+        if (r.status === 401) { adminTokenExpired(); return; }
+        if (!r.ok) throw new Error(j.error || 'failed');
+        toast('Entry created.', 'success');
+        closeModal('add-backdrop');
+        await refresh();
+      } catch (err) {
+        console.error(err);
+        toast('Create failed. Try again.', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function openEditFromDetail() {
+      const entry = state.detailEntry;
+      if (!entry) return;
+      const meta = TYPE_META[entry.event_type] || { category:'time_away' };
+      document.getElementById('edit-category').value = meta.category;
+      populateTypeSelect('edit-category', 'edit-type');
+      document.getElementById('edit-type').value = entry.event_type;
+      document.getElementById('edit-member').value = entry.member_id || '';
+      document.getElementById('edit-title-input').value = entry.title || '';
+      document.getElementById('edit-start').value = entry.start_date;
+      document.getElementById('edit-end').value = entry.end_date;
+      document.getElementById('edit-status').value = entry.status;
+      document.getElementById('edit-notes').value = entry.notes || '';
+      closeModal('detail-backdrop');
+      openModal('edit-backdrop');
+    }
+
+    async function submitAdminEdit(ev) {
+      ev.preventDefault();
+      const entry = state.detailEntry;
+      if (!entry) return;
+      const btn = document.getElementById('btn-edit-submit');
+      btn.disabled = true;
+      const patch = {
+        event_type: document.getElementById('edit-type').value,
+        member_id:  document.getElementById('edit-member').value || null,
+        title:      document.getElementById('edit-title-input').value.trim() || null,
+        start_date: document.getElementById('edit-start').value,
+        end_date:   document.getElementById('edit-end').value,
+        status:     document.getElementById('edit-status').value,
+        notes:      document.getElementById('edit-notes').value.trim() || null,
+      };
+      if (!patch.member_id && !patch.title) {
+        toast('Pick a member or enter a title.', 'error');
+        btn.disabled = false;
+        return;
+      }
+      if (patch.end_date < patch.start_date) {
+        toast('End date must be on or after start date.', 'error');
+        btn.disabled = false;
+        return;
+      }
+      try {
+        const r = await fetch('/api/admin-update', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ token: state.adminToken, id: entry.id, patch }),
+        });
+        const j = await r.json();
+        if (r.status === 401) { adminTokenExpired(); return; }
+        if (!r.ok) throw new Error(j.error || 'failed');
+        toast('Entry updated.', 'success');
+        closeModal('edit-backdrop');
+        await refresh();
+      } catch (err) {
+        console.error(err);
+        toast('Update failed. Try again.', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function adminTokenExpired() {
+      state.adminToken = null;
+      sessionStorage.removeItem('admin_token');
+      refreshAdminUi();
+      renderAll();
+      toast('Admin session expired. Sign in again.', 'error');
+    }
+
+    /* ============================================================
+     * CONFIRM HELPER
+     * ============================================================ */
+    function openConfirm({ eyebrow, title, sub, bodyHtml, confirmText, danger, onConfirm }) {
+      document.getElementById('confirm-eyebrow').textContent = eyebrow;
+      document.getElementById('confirm-title').textContent = title;
+      document.getElementById('confirm-sub').textContent = sub;
+      document.getElementById('confirm-body').innerHTML = bodyHtml || '';
+      const okBtn = document.getElementById('btn-confirm-ok');
+      okBtn.textContent = confirmText || 'Confirm';
+      okBtn.className = danger ? 'danger' : 'primary';
+      okBtn.onclick = async () => {
+        closeModal('confirm-backdrop');
+        await onConfirm();
+      };
+      document.getElementById('btn-confirm-cancel').onclick = () => closeModal('confirm-backdrop');
+      openModal('confirm-backdrop');
+    }
+
+    /* ============================================================
+     * SELECT POPULATORS
+     * ============================================================ */
+    function populateTypeSelect(catSelectId, typeSelectId) {
+      const cat = document.getElementById(catSelectId).value;
+      const types = CATEGORY_TYPES[cat] || [];
+      const sel = document.getElementById(typeSelectId);
+      sel.innerHTML = types.map(t => `<option value="${t}">${TYPE_META[t].label}</option>`).join('');
+    }
+    function populateMemberSelect(selectId, includeTeamwide) {
+      const sel = document.getElementById(selectId);
+      const opts = state.members.filter(m => m.active)
+        .map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`);
+      const teamWide = includeTeamwide ? `<option value="">— Team-wide / no member —</option>` : '';
+      sel.innerHTML = teamWide + opts.join('');
+    }
+
+    /* ============================================================
+     * SIGN OUT
+     * ============================================================ */
+    async function signOut() {
+      try { await state.supabase.auth.signOut(); } catch {}
+      state.adminToken = null;
+      sessionStorage.removeItem('admin_token');
+      window.location.replace('/login.html');
+    }
+
+    /* ============================================================
+     * UTILITIES
+     * ============================================================ */
+    function ymd(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+    function firstOfMonth(d) { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x; }
+    function lastOfMonth(d)  { const x = new Date(d.getFullYear(), d.getMonth() + 1, 0); x.setHours(0,0,0,0); return x; }
+    function stepMonth(n) {
+      const d = new Date(state.viewMonth);
+      d.setMonth(d.getMonth() + n);
+      state.viewMonth = firstOfMonth(d);
+      renderAll();
+    }
+    function expandRange(start, end) {
+      const out = [];
+      const s = new Date(`${start}T00:00:00`);
+      const e = new Date(`${end}T00:00:00`);
+      for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) out.push(ymd(d));
+      return out;
+    }
+    function daysOverlap(s1, e1, s2, e2) {
+      const start = s1 > s2 ? s1 : s2;
+      const end = e1 < e2 ? e1 : e2;
+      if (end < start) return 0;
+      return expandRange(start, end).length;
+    }
+    function entriesOn(dayStr) {
+      return state.entries.filter(e => dayStr >= e.start_date && dayStr <= e.end_date);
+    }
+    function formatDayShort(iso) {
+      const d = new Date(`${iso}T00:00:00`);
+      return d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+    }
+    function formatDayLong(iso) {
+      const d = new Date(`${iso}T00:00:00`);
+      return d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+    }
+    function formatTimestamp(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    }
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
+    function openModal(id)  { document.getElementById(id).classList.add('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+    function setSync(text, isError) {
+      const el = document.getElementById('sync-status');
+      el.textContent = text;
+      el.classList.toggle('offline', !!isError);
+    }
+    let toastTimer = null;
+    function toast(msg, kind) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast show' + (kind ? ' ' + kind : '');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+    }
+  </script>
+</body>
+</html>

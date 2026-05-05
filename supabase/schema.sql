@@ -1,0 +1,101 @@
+-- MGH Robotic Surgery PA Team Calendar — Schema
+-- Run this entire file in Supabase SQL editor on a fresh project.
+
+-- =============================================================
+-- TABLES
+-- =============================================================
+
+create table if not exists team_members (
+  id            uuid primary key default gen_random_uuid(),
+  auth_user_id  uuid references auth.users(id) on delete set null,
+  name          text not null,
+  email         text not null unique,
+  color         text not null,
+  active        boolean not null default true,
+  created_at    timestamptz not null default now()
+);
+create index if not exists team_members_auth_idx on team_members (auth_user_id);
+create index if not exists team_members_email_idx on team_members (lower(email));
+
+create table if not exists calendar_entries (
+  id             uuid primary key default gen_random_uuid(),
+  member_id      uuid references team_members(id) on delete cascade,
+  event_type     text not null
+    check (event_type in ('pto', 'cme', 'pd', 'note', 'onb', 'shd', 'per_diem', 'swp')),
+  title          text,
+  start_date     date not null,
+  end_date       date not null,
+  status         text not null default 'pending'
+    check (status in ('pending', 'approved', 'denied')),
+  notes          text,
+  requested_at   timestamptz not null default now(),
+  decided_at     timestamptz,
+  decided_by     text,
+  constraint title_or_member check (member_id is not null or title is not null),
+  constraint valid_date_range check (end_date >= start_date)
+);
+create index if not exists calendar_entries_dates_idx  on calendar_entries (start_date, end_date);
+create index if not exists calendar_entries_status_idx on calendar_entries (status);
+create index if not exists calendar_entries_type_idx   on calendar_entries (event_type);
+create index if not exists calendar_entries_member_idx on calendar_entries (member_id);
+
+-- =============================================================
+-- HELPER FUNCTIONS
+-- =============================================================
+
+create or replace function entry_category(et text) returns text as $$
+  select case
+    when et in ('pto', 'cme', 'pd')   then 'time_away'
+    when et in ('note', 'onb', 'shd') then 'events'
+    when et in ('per_diem', 'swp')    then 'coverage_adds'
+    else 'unknown'
+  end;
+$$ language sql immutable;
+
+-- Auto-link a newly-created auth.users row to a pre-existing team_members row
+-- by matching email (case-insensitive). This is how provisioning works:
+-- admin INSERTs a team_members row first, then the user signs up, and this
+-- trigger ties them together. Without a matching team_members row, the
+-- auth user can sign up but the auth guard on /index.html will sign them out.
+create or replace function link_auth_user_to_team_member() returns trigger as $$
+begin
+  update team_members
+     set auth_user_id = new.id
+   where lower(email) = lower(new.email)
+     and auth_user_id is null;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function link_auth_user_to_team_member();
+
+-- Convenience function for RLS policies / serverless functions: returns the
+-- team_members.id for the currently-authenticated Supabase Auth user.
+create or replace function current_member_id() returns uuid as $$
+  select id from team_members where auth_user_id = auth.uid() limit 1;
+$$ language sql stable security definer;
+
+-- =============================================================
+-- ROW LEVEL SECURITY
+-- =============================================================
+
+alter table team_members     enable row level security;
+alter table calendar_entries enable row level security;
+
+drop policy if exists "auth read team_members" on team_members;
+create policy "auth read team_members"
+  on team_members for select
+  to authenticated
+  using (true);
+
+drop policy if exists "auth read calendar_entries" on calendar_entries;
+create policy "auth read calendar_entries"
+  on calendar_entries for select
+  to authenticated
+  using (true);
+
+-- NO direct insert/update/delete policies — all writes go through serverless
+-- functions using the service-role key, which bypasses RLS entirely.
