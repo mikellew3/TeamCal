@@ -153,8 +153,30 @@
     <div class="login-footer">MGH Robotic Surgery PA Team · Calendar</div>
   </div>
 
+  <script>
+    window.__bootStarted = false;
+    window.addEventListener('error', function (e) {
+      var m = document.getElementById('signin-msg');
+      if (m) { m.className = 'login-msg error'; m.textContent = 'Script error: ' + (e?.message || 'unknown') + ' — see console.'; }
+    });
+    setTimeout(function () {
+      if (window.__bootStarted) return;
+      var m = document.getElementById('signin-msg');
+      if (m && !m.textContent) { m.className = 'login-msg error'; m.textContent = 'Page script did not start — likely the Supabase CDN was blocked. Check console (F12).'; }
+    }, 6000);
+  </script>
+
   <script type="module">
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+    window.__bootStarted = true;
+    let createClient;
+    try {
+      ({ createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'));
+    } catch (e) {
+      console.error('Failed to import @supabase/supabase-js from CDN', e);
+      var m = document.getElementById('signin-msg');
+      if (m) { m.className = 'login-msg error'; m.textContent = 'Could not load Supabase library: ' + (e?.message || 'unknown'); }
+      throw e;
+    }
 
     let supabase = null;
     async function initSupabase() {
