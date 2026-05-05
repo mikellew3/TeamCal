@@ -160,9 +160,11 @@
     async function initSupabase() {
       if (supabase) return supabase;
       const r = await fetch('/api/env');
-      const env = await r.json();
+      if (!r.ok) throw new Error(`API error ${r.status} on /api/env`);
+      let env;
+      try { env = await r.json(); } catch { throw new Error('Non-JSON response from /api/env'); }
       if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
-        throw new Error('Supabase env not configured');
+        throw new Error('Supabase env not configured (set SUPABASE_URL + SUPABASE_ANON_KEY in Vercel)');
       }
       supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
       return supabase;
@@ -198,9 +200,9 @@
         const { data } = await supa.auth.getSession();
         if (data?.session) window.location.replace('/index.html');
       } catch (e) {
-        // env not configured — show a banner so the deployer knows
+        console.error('login init', e);
         const m = document.getElementById('signin-msg');
-        setMsg(m, 'Configuration error: backend not reachable.', 'error');
+        setMsg(m, 'Configuration error: ' + (e?.message || 'backend not reachable.'), 'error');
       }
     })();
 
