@@ -172,16 +172,16 @@
     }, 6000);
   </script>
 
+  <script src="/vendor/supabase.js"></script>
   <script type="module">
     window.__bootStarted = true;
     let createClient;
-    try {
-      ({ createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'));
-    } catch (e) {
-      console.error('Failed to import @supabase/supabase-js from CDN', e);
+    if (window.supabase && window.supabase.createClient) {
+      ({ createClient } = window.supabase);
+    } else {
       var m = document.getElementById('signin-msg');
-      if (m) { m.className = 'login-msg error'; m.textContent = 'Could not load Supabase library: ' + (e?.message || 'unknown'); }
-      throw e;
+      if (m) { m.className = 'login-msg error'; m.textContent = 'Could not load Supabase library — check /vendor/supabase.js deployed.'; }
+      throw new Error('supabase global missing');
     }
 
     let supabase = null;
