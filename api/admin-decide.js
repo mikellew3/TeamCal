@@ -1,11 +1,14 @@
 import {
   serviceClient, readJson, send, methodGuard, verifyAdminToken,
-  TIME_AWAY_TYPES, timeAwayConflicts, classifyConflict,
+  TIME_AWAY_TYPES, TYPE_LABEL,
+  timeAwayConflicts, classifyConflict, formatRange,
 } from './_lib.js';
+import { sendPush } from './_push.js';
 
 // POST { token, id, status, override? } → approve / deny / reset to pending.
 // On approve, re-runs conflict check against APPROVED entries only. If a
-// conflict exists, returns 409 unless override=true.
+// conflict exists, returns 409 unless override=true. On any successful
+// decision, sends a push notification to the requesting member.
 export default async function handler(req, res) {
   if (!methodGuard(req, res, ['POST'])) return;
   const body = await readJson(req);
@@ -20,19 +23,18 @@ export default async function handler(req, res) {
     const supa = serviceClient();
     const { data: entry, error: gErr } = await supa
       .from('calendar_entries')
-      .select('*')
+      .select('*, team_members(name, email)')
       .eq('id', id)
       .maybeSingle();
     if (gErr) throw gErr;
     if (!entry) return send(res, 404, { error: 'not_found' });
 
-    // Approve flow with conflict re-check (against APPROVED only).
     if (status === 'approved'
         && entry.member_id
         && TIME_AWAY_TYPES.includes(entry.event_type)
         && !override) {
-      const { dayCounts } = await timeAwayConflictsApprovedOnly(
-        supa, entry.member_id, entry.start_date, entry.end_date);
+      const { dayCounts } = await timeAwayConflicts(
+        supa, entry.member_id, entry.start_date, entry.end_date, 'approved');
       const verdict = classifyConflict(dayCounts);
       if (verdict.state === 'block') {
         return send(res, 409, {
@@ -49,7 +51,6 @@ export default async function handler(req, res) {
       decided_at: status === 'pending' ? null : new Date().toISOString(),
       decided_by: status === 'pending' ? null : 'admin',
     };
-
     const { data, error } = await supa
       .from('calendar_entries')
       .update(patch)
@@ -57,46 +58,32 @@ export default async function handler(req, res) {
       .select('*')
       .single();
     if (error) throw error;
+
+    // Push to the requesting member (only Time Away has a member).
+    if (entry.member_id) {
+      const typeLabel = TYPE_LABEL[entry.event_type] || entry.event_type;
+      const range = formatRange(entry.start_date, entry.end_date);
+      let title = '', bodyTxt = '';
+      if (status === 'approved') {
+        title = 'Request approved';
+        bodyTxt = `Your ${typeLabel} ${range} was approved`;
+      } else if (status === 'denied') {
+        title = 'Request denied';
+        bodyTxt = `Your ${typeLabel} ${range} needs review — open calendar`;
+      } else {
+        title = 'Request reopened';
+        bodyTxt = `Your ${typeLabel} ${range} is pending again`;
+      }
+      sendPush({
+        recipientType: 'member',
+        memberId: entry.member_id,
+        payload: { title, body: bodyTxt, tag: `dec-${id}`, entryId: id, url: `/index.html?entry=${id}` },
+      }).catch(err => console.error('push member', err));
+    }
+
     return send(res, 200, { entry: data });
   } catch (err) {
     console.error('admin-decide', err);
     return send(res, 500, { error: 'server_error' });
   }
-}
-
-// Same as timeAwayConflicts in _lib.js but filters to status='approved' only.
-async function timeAwayConflictsApprovedOnly(supabase, requesterId, startDate, endDate) {
-  const { data, error } = await supabase
-    .from('calendar_entries')
-    .select('id, member_id, start_date, end_date, event_type, status, team_members(name)')
-    .in('event_type', TIME_AWAY_TYPES)
-    .eq('status', 'approved')
-    .lte('start_date', endDate)
-    .gte('end_date', startDate);
-  if (error) throw error;
-
-  const days = [];
-  const start = new Date(`${startDate}T00:00:00Z`);
-  const end   = new Date(`${endDate}T00:00:00Z`);
-  for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-    days.push(d.toISOString().slice(0, 10));
-  }
-
-  const byDay = new Map(days.map(d => [d, new Map()]));
-  for (const e of data || []) {
-    if (!e.member_id || e.member_id === requesterId) continue;
-    for (const day of days) {
-      if (day >= e.start_date && day <= e.end_date) {
-        const m = byDay.get(day);
-        if (!m.has(e.member_id)) m.set(e.member_id, e.team_members?.name || 'Unknown');
-      }
-    }
-  }
-  return {
-    dayCounts: days.map(day => ({
-      day,
-      others_off: byDay.get(day).size,
-      names: Array.from(byDay.get(day).values()).sort(),
-    })),
-  };
 }

@@ -1,6 +1,6 @@
-// Serves the public Supabase URL + anon key to the browser. These are safe to
-// expose (RLS protects writes; reads are intentionally open to authenticated
-// users). Avoids hard-coding secrets into static HTML.
+// Serves the public config to the browser. SUPABASE_URL + ANON_KEY are safe
+// to expose (RLS protects writes; reads are intentionally open to
+// authenticated users). VAPID_PUBLIC_KEY is also a public key.
 export default function handler(req, res) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
@@ -11,6 +11,8 @@ export default function handler(req, res) {
   const body = {
     SUPABASE_URL: process.env.SUPABASE_URL || '',
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
+    VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY || '',
+    APP_URL: process.env.APP_URL || '',
   };
   res.statusCode = 200;
   res.setHeader('Content-Type', 'application/json');

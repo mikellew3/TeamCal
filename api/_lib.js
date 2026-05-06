@@ -7,6 +7,12 @@ export const EVENT_TYPES     = ['note', 'onb', 'shd'];
 export const COVERAGE_TYPES  = ['per_diem', 'swp'];
 export const ALL_TYPES = [...TIME_AWAY_TYPES, ...EVENT_TYPES, ...COVERAGE_TYPES];
 
+export const TYPE_LABEL = {
+  pto: 'PTO', cme: 'CME', pd: 'PD',
+  note: 'Note', onb: 'Onboarding', shd: 'Shadowing',
+  per_diem: 'Per Diem', swp: 'Swap',
+};
+
 export function categoryFor(et) {
   if (TIME_AWAY_TYPES.includes(et)) return 'time_away';
   if (EVENT_TYPES.includes(et))     return 'events';
@@ -84,7 +90,6 @@ export function methodGuard(req, res, methods) {
   return true;
 }
 
-// Build the list of dates (YYYY-MM-DD) covered by [start, end] inclusive.
 export function expandDateRange(startStr, endStr) {
   const out = [];
   const start = new Date(`${startStr}T00:00:00Z`);
@@ -99,54 +104,63 @@ export function isYmd(s) {
   return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s));
 }
 
-// Time-away conflict check. Returns { blockedDays, others } where blockedDays
-// is an array of { day, names[] } for days where 1+ OTHER members have a
-// time-away entry (approved OR pending) overlapping that day.
-export async function timeAwayConflicts(supabase, requesterId, startDate, endDate) {
+export function isHttpUrl(s) {
+  if (typeof s !== 'string') return false;
+  try {
+    const u = new URL(s.trim());
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch { return false; }
+}
+
+export function dayCount(start, end) {
+  const a = new Date(`${start}T00:00:00Z`);
+  const b = new Date(`${end}T00:00:00Z`);
+  return Math.round((b - a) / 86_400_000) + 1;
+}
+
+export function formatRange(start, end) {
+  const fmt = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US',
+    { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  return start === end ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
+}
+
+// Time-away conflict check. `statusFilter` controls which existing entries
+// count: 'active' = approved + pending; 'approved' = approved only.
+export async function timeAwayConflicts(supabase, requesterId, startDate, endDate, statusFilter = 'active') {
   const days = expandDateRange(startDate, endDate);
+  const statuses = statusFilter === 'approved' ? ['approved'] : ['approved', 'pending'];
   const { data, error } = await supabase
     .from('calendar_entries')
     .select('id, member_id, start_date, end_date, event_type, status, team_members(name)')
     .in('event_type', TIME_AWAY_TYPES)
-    .in('status', ['approved', 'pending'])
+    .in('status', statuses)
     .lte('start_date', endDate)
     .gte('end_date', startDate);
   if (error) throw error;
 
-  const byDay = new Map();
-  for (const day of days) byDay.set(day, new Map());
-
+  const byDay = new Map(days.map(d => [d, new Map()]));
   for (const e of data || []) {
-    if (!e.member_id) continue;
-    if (e.member_id === requesterId) continue;
+    if (!e.member_id || e.member_id === requesterId) continue;
     for (const day of days) {
       if (day >= e.start_date && day <= e.end_date) {
-        const dayMap = byDay.get(day);
-        if (!dayMap.has(e.member_id)) {
-          dayMap.set(e.member_id, e.team_members?.name || 'Unknown');
-        }
+        const m = byDay.get(day);
+        if (!m.has(e.member_id)) m.set(e.member_id, e.team_members?.name || 'Unknown');
       }
     }
   }
-
-  const dayCounts = days.map(day => ({
-    day,
-    others_off: byDay.get(day).size,
-    names: Array.from(byDay.get(day).values()).sort(),
-  }));
-
-  return { dayCounts };
+  return {
+    dayCounts: days.map(day => ({
+      day,
+      others_off: byDay.get(day).size,
+      names: Array.from(byDay.get(day).values()).sort(),
+    })),
+  };
 }
 
-// Apply conflict rules. `mode` controls which rule set to use.
-//   'submit'  → reject if 2+ off any day, OR multi-day with any 1+ off
-//   'approve' → only checks approved entries (caller should filter); same rules
 export function classifyConflict(dayCounts) {
   const nDays = dayCounts.length;
   const blocked = dayCounts.filter(d => d.others_off >= 2);
-  if (blocked.length > 0) {
-    return { state: 'block', reason: 'two_off', blockedDays: blocked };
-  }
+  if (blocked.length > 0) return { state: 'block', reason: 'two_off', blockedDays: blocked };
   const overlap = dayCounts.filter(d => d.others_off >= 1);
   if (nDays >= 2 && overlap.length > 0) {
     return { state: 'block', reason: 'multiday_overlap', blockedDays: overlap };

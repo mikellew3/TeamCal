@@ -1,22 +1,20 @@
-# MGH Robotic Surgery PA Team Calendar
+# MGH Robotic Surgery PA Team Calendar (PWA)
 
-A login-gated team operations calendar that replaces the team's Outlook calendar.
-Members sign in to view the team calendar and submit time-away requests for
-themselves. The admin (Mike) approves/denies requests and creates everything
-else (events, coverage adds).
-
-The visual language matches the PA Staffing Executive Summary report exactly:
-Inter + Source Serif 4 typography, deep teal `#1f6b6b` accent, warm off-white
-page background, white "paper sheet" with a subtle drop shadow.
+A login-gated team operations calendar that replaces the team's Outlook
+calendar — delivered as an installable Progressive Web App with push
+notifications and a Sunday-night email digest.
 
 ## Stack
 
-- **Frontend** – static HTML, vanilla JS, no build step. CDN imports only.
-- **Database/API** – Supabase Postgres with Row Level Security
-- **Team auth** – Supabase Auth (email + password)
-- **Admin auth** – `ADMIN_PASSWORD` env var → HMAC session token
-- **Hosting** – Vercel (static + serverless functions in `/api`)
-- **Email** – Resend (free tier, optional)
+- **Frontend** — static HTML, vanilla JS, no build step. CDN imports only.
+- **Database/API** — Supabase Postgres with Row Level Security
+- **Team auth** — Supabase Auth (email + password)
+- **Admin auth** — `ADMIN_PASSWORD` env var → HMAC session token
+- **Hosting** — Vercel (static + serverless functions in `/api`)
+- **Scheduled jobs** — Vercel Cron (free Hobby tier)
+- **Email** — Resend (free tier; per-event + Sunday digest)
+- **Push** — Web Push Protocol with VAPID
+- **PWA** — `manifest.json` + service worker + iOS install tip
 
 ## File structure
 
@@ -24,18 +22,25 @@ page background, white "paper sheet" with a subtle drop shadow.
 team-calendar/
 ├── public/
 │   ├── index.html              ← the calendar (gated by auth)
-│   └── login.html              ← sign-in / sign-up entry point
+│   ├── login.html              ← sign-in / sign-up entry
+│   ├── manifest.json           ← PWA manifest
+│   ├── sw.js                   ← service worker
+│   └── icons/
+│       ├── icon-192.png  icon-512.png
+│       ├── icon-maskable-192.png  icon-maskable-512.png
+│       └── apple-touch-icon.png
 ├── api/
-│   ├── _lib.js                 ← shared helpers (HMAC, conflict-check, etc.)
-│   ├── env.js                  ← serves SUPABASE_URL + SUPABASE_ANON to browser
-│   ├── check-eligible.js       ← POST {email} → {eligible}
-│   ├── submit-request.js       ← POST {entry, jwt} → conflict-checked submit
-│   ├── admin-verify.js         ← POST password → HMAC session token
-│   ├── admin-decide.js         ← POST {id, status, token, override?}
-│   ├── admin-create.js         ← POST {entry, token} → bypass conflict rules
-│   ├── admin-update.js         ← POST {id, patch, token}
-│   ├── admin-delete.js         ← POST {id, token}
-│   └── notify-request.js       ← POST {entry_id} → emails admin via Resend
+│   ├── _lib.js                 ← shared helpers
+│   ├── _push.js                ← push helper (web-push + VAPID)
+│   ├── env.js                  ← public env to browser
+│   ├── check-eligible.js       ← POST {email}
+│   ├── submit-request.js       ← POST {entry, jwt}
+│   ├── subscribe-push.js       ← POST {subscription, scope}
+│   ├── unsubscribe-push.js     ← POST {endpoint}
+│   ├── admin-verify.js
+│   ├── admin-create.js  admin-decide.js  admin-update.js  admin-delete.js
+│   ├── notify-request.js       ← per-event email
+│   └── cron-weekly-digest.js   ← runs every Sunday 8 PM ET
 ├── supabase/
 │   ├── schema.sql
 │   └── seed.sql
@@ -44,156 +49,162 @@ team-calendar/
 └── README.md
 ```
 
-## First-time Supabase setup
+## Step-by-step setup
 
-1. Create a new Supabase project at https://supabase.com.
-2. In the SQL editor, paste and run **`supabase/schema.sql`**.
-3. Optionally run **`supabase/seed.sql`** to populate sample team members.
-   For real use, replace these with the actual roster (see "Adding new team
-   members" below).
-4. Enable email auth: **Authentication → Providers → Email** (it's on by
-   default — verify the toggle is enabled).
-5. **Authentication → URL Configuration**: set the **Site URL** to your
-   deployed Vercel URL (e.g. `https://teamcal.vercel.app`). Add
-   `https://teamcal.vercel.app/login.html` to the **Redirect URLs** allow-list.
-6. **Authentication → Email Templates → Confirm signup**: customize the
-   template to match the report's visual language. Suggested HTML:
-   ```html
-   <div style="font-family:'Inter',sans-serif;background:#e8e6e1;padding:32px;">
-     <div style="background:#fff;max-width:480px;margin:0 auto;padding:32px;
-                 box-shadow:0 8px 32px rgba(0,0,0,0.12);border-radius:2px;">
-       <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;
-                   color:#1f6b6b;font-weight:600;margin-bottom:6px;">
-         MGH Robotic Surgery PA Team
-       </div>
-       <h1 style="font-family:'Source Serif 4',serif;font-size:24px;
-                  font-weight:600;margin:0 0 12px;color:#1a2a33;">
-         Confirm your email
-       </h1>
-       <p style="color:#3a4a52;font-size:13px;line-height:1.5;">
-         Click below to confirm your email and finish creating your account.
-       </p>
-       <p>
-         <a href="{{ .ConfirmationURL }}"
-            style="display:inline-block;background:#1f6b6b;color:#fff;
-                   padding:11px 18px;font-weight:600;border-radius:2px;
-                   text-decoration:none;font-size:13px;">
-           Confirm email
-         </a>
-       </p>
-     </div>
-   </div>
-   ```
-7. **Project Settings → API** → copy the **Project URL**, **anon public key**,
-   and **service_role key**. You'll need them as env vars below.
+You'll need accounts at: **Supabase** (free), **Vercel** (free), and
+optionally **Resend** (free) for email.
 
-## Resend setup (optional)
+### 1. Push notification keys (VAPID)
 
-If you want admin email notifications:
+Generate ONE pair locally, save them to a notes file. They never need to
+change.
 
-1. Create a free account at https://resend.com.
-2. Add your sending domain (or use the test mode with `onboarding@resend.dev`
-   as the From address — works only for the verified account email).
-3. Create an API key — save it for `RESEND_API_KEY`.
-4. Set `RESEND_FROM` like `MGH PA Team Calendar <pto@yourdomain.com>` and
-   `ADMIN_EMAIL` to Mike's address.
-
-If `RESEND_API_KEY` is unset, `/api/notify-request` is a silent no-op — submit
-flow still works, but no email is sent.
-
-## Vercel deploy
-
-Either of:
-
-**A. Vercel CLI**
 ```
-npm install -g vercel
-vercel login
-vercel link        # one-time
-vercel             # preview deploy
-vercel --prod      # production deploy
+npx web-push generate-vapid-keys
 ```
 
-**B. GitHub import**
-Push this repo to GitHub, then "Import Project" in the Vercel dashboard.
+Output:
+```
+=======================================
+Public Key: BNxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+Private Key: yyyyyyyyyyyyyyyyyyyyyyyy...
+=======================================
+```
 
-After the first deploy, set environment variables in **Project Settings →
-Environment Variables** for the **Production** environment, then redeploy.
+Save the **public** key as `VAPID_PUBLIC_KEY` and **private** as
+`VAPID_PRIVATE_KEY` for later.
+
+### 2. App icons (optional)
+
+The repo ships with simple placeholder icons in `public/icons/`. To make
+proper ones with your team logo:
+
+1. Upload a square PNG at https://realfavicongenerator.net.
+2. Download the package and replace these five files (keep the names):
+   - `icon-192.png`, `icon-512.png`
+   - `icon-maskable-192.png`, `icon-maskable-512.png`
+   - `apple-touch-icon.png`
+
+### 3. Supabase
+
+1. Create a project at https://supabase.com.
+2. **SQL Editor → New query** → paste `supabase/schema.sql` → Run.
+3. (Optional) Run `supabase/seed.sql` for sample team members. **Skip this
+   for production** — add real members instead (see "Adding new team
+   members later" below).
+4. **Authentication → URL Configuration**: set **Site URL** to your
+   eventual Vercel URL, add `<URL>/login.html` to **Redirect URLs**.
+5. **Authentication → Email Templates → Confirm signup**: customize HTML
+   to match the design system if you like.
+6. **Settings → API**: copy **URL**, **anon public**, and **service_role**
+   keys.
+
+### 4. Resend (optional but recommended)
+
+For per-event admin notifications + Sunday digest:
+
+1. Sign up at https://resend.com.
+2. Add and verify your sending domain (or use `onboarding@resend.dev` for
+   testing — works only for the verified account email).
+3. Create an API key.
+
+### 5. Vercel deploy
+
+Push this repo to GitHub, then "Import Project" at vercel.com. After the
+first deploy, set environment variables in **Project Settings → Environment
+Variables** (apply to **Production**, **Preview**, **Development**), then
+redeploy.
+
+### 6. Confirm cron is registered
+
+The repo's `vercel.json` declares the weekly digest job. After deploying,
+verify it shows up in **Vercel Dashboard → your project → Settings → Cron
+Jobs**. To test manually, click **Run Now** there.
+
+### 7. Try it
+
+Open the deployed URL → land on the login page. Add yourself to
+`team_members` in Supabase first (Table Editor → Insert row), then click
+**First Time?** on the login screen, enter your email, set a password,
+confirm via emailed link, sign in.
 
 ## Environment variables
 
-| Name                     | Required | Purpose                                                      |
-| ------------------------ | -------- | ------------------------------------------------------------ |
-| `SUPABASE_URL`           | yes      | Supabase project URL                                         |
-| `SUPABASE_ANON_KEY`      | yes      | Supabase anon (public) key — exposed to the browser          |
-| `SUPABASE_SERVICE_KEY`   | yes      | Supabase service role key — server-side only, bypasses RLS   |
-| `ADMIN_PASSWORD`         | yes      | Password for admin sign-in (Mike picks this)                 |
-| `ADMIN_TOKEN_SECRET`     | yes      | Long random string, used to sign HMAC admin session tokens   |
-| `ADMIN_EMAIL`            | rec      | Email recipient for new-request notifications                |
-| `RESEND_API_KEY`         | opt      | Resend API key (omit to disable email notifications)         |
-| `RESEND_FROM`            | opt      | From-address for Resend (`Name <addr@domain>`)               |
+| Name                  | Required | Purpose |
+| --------------------- | -------- | ------- |
+| `SUPABASE_URL`        | yes | Project URL |
+| `SUPABASE_ANON_KEY`   | yes | anon public key (browser-visible) |
+| `SUPABASE_SERVICE_KEY`| yes | service_role key (server only) |
+| `ADMIN_PASSWORD`      | yes | Admin password Mike types in the Admin modal |
+| `ADMIN_TOKEN_SECRET`  | yes | Long random string for HMAC tokens — `openssl rand -hex 32` |
+| `ADMIN_EMAIL`         | rec | Recipient for new-request notifications + admin digest |
+| `RESEND_API_KEY`      | opt | Skip to disable all email |
+| `RESEND_FROM`         | opt | e.g. `PA Calendar <pto@yourdomain.com>` |
+| `VAPID_PUBLIC_KEY`    | opt | Skip to disable push (calendar still works) |
+| `VAPID_PRIVATE_KEY`   | opt | Pair with public key |
+| `CRON_SECRET`         | opt | Vercel auto-attaches as `Authorization: Bearer ${CRON_SECRET}` to scheduled hits — set to a long random string to lock the cron endpoint |
+| `APP_URL`             | rec | Used in digest CTAs (e.g. `https://pa-calendar.vercel.app`) |
 
-Generate `ADMIN_TOKEN_SECRET` with e.g. `openssl rand -hex 32`.
+## Custom domain (optional)
 
-## Custom domain
-
-Add the domain in **Vercel Project → Domains**, follow DNS instructions, then
-update the Supabase **Site URL** + **Redirect URLs** to match.
-
-## Setting up the admin (Mike)
-
-Admin auth is independent of team-member auth: the "Admin" button in the
-masthead asks for `ADMIN_PASSWORD` and stores an HMAC token in
-`sessionStorage`. But the calendar UI itself requires a Supabase Auth session
-plus a matching `team_members` row, so Mike still needs to sign in like a
-team member.
-
-Two practical options:
-
-1. **Add Mike as a team member.** Insert a `team_members` row for Mike
-   (using whatever email he wants), have him sign up via "First Time?",
-   then he can promote himself to admin via the "Admin" button. Set his
-   row's `active = false` if you don't want him appearing in the team
-   roster / KPIs.
-2. **Add a dedicated admin user.** Same as above but with an alias email
-   like `admin@yourdomain.com`, only used for calendar access.
-
-Either way, `ADMIN_PASSWORD` is what gates admin-only actions
-(approve/deny/edit/delete/direct-create) — independent of which Supabase
-account is signed in.
+`*.vercel.app` works fine and includes free SSL. Add a custom domain in
+**Vercel → Project → Domains**, follow DNS instructions, then update
+**Supabase → Authentication → URL Configuration** to match.
 
 ## Onboarding workflow for team members
 
-1. Mike adds the team member's email to the `team_members` table (see "Adding
-   new team members" below).
-2. Mike sends the new member the calendar URL.
-3. The member clicks "First Time?" on the login page, enters their email; the
-   eligibility check confirms they're on the roster.
-4. The member chooses a password and submits.
-5. Supabase emails them a confirmation link. After clicking it, the
-   `link_auth_user_to_team_member` trigger automatically links their
-   `auth.users` row to their `team_members` row by email match.
-6. They sign in and start using the calendar.
+1. Mike adds the row in Supabase **Table Editor → team_members → Insert
+   row** (name + email + color).
+2. Mike sends the calendar URL.
+3. Member clicks **First Time?**, enters their email; eligibility check
+   confirms they're on the roster.
+4. Member sets a password and confirms via email.
+5. Member signs in, then **Add to Home Screen** (iOS Share button →
+   Add to Home Screen, or Android browser menu → Install).
+6. On next launch, sees the **Enable notifications** prompt — tap Enable.
 
-If a member tries to sign up without a matching `team_members` row, the
-eligibility check rejects them at step 3.
+## Setting up the admin (Mike)
+
+Admin auth (the password) is independent of team-member auth (the Supabase
+account), but the calendar UI itself requires a Supabase Auth session plus
+a matching `team_members` row. So Mike needs both:
+
+1. Add Mike's row to `team_members` (set `active = false` if you don't
+   want him counted in KPIs / appearing as a regular team member).
+2. Mike signs up at `/login.html` like a team member.
+3. Once signed in, he clicks **Admin** in the masthead and types
+   `ADMIN_PASSWORD`.
 
 ## Daily use
 
-- **Members** click "Request Time Away" → pick PTO / CME / PD, dates, optional
-  note. The modal shows a live conflict preview before submission. On submit
-  the entry appears with a striped pending pattern; admin gets an email.
-- **Admin** clicks "Admin", enters the password, then can:
-  - Click any chip to approve / deny / reset / edit / delete
-  - Click any day cell to add a new entry
-  - Use "Add Entry" in the masthead for any category (Time Away / Events /
-    Coverage Adds), any team member or team-wide
-- Admin sessions live in `sessionStorage` and end when the tab closes.
+- **Members** click "Request Time Away" → pick PTO / CME / PD, dates,
+  optional note. Live conflict preview appears as you change dates.
+  Submit triggers an admin push + email.
+- **Admin** taps the push notification → calendar opens to that entry.
+  Approve / Deny / Reset / Edit / Delete.
+- **Admin** also uses **Add Entry** for Events / Coverage Adds / on-behalf
+  Time Away. Direct-create skips conflict rules; **member is NOT
+  notified** (the modal warns about this).
+- **Tap any day cell** → Day Overview shows everything on that day. Tap a
+  chip → individual detail. Tap "+N more" → Day Overview.
+
+## Sunday-night digest
+
+- Auto-fires every Sunday ~8 PM ET (`0 1 * * 1` UTC = Mon 1 AM UTC).
+- Each member with at least one entry next week gets a personalized
+  email; members with no entries are skipped (no spam).
+- Admin always gets a master summary, including a "Heads up" section
+  for any day with 2+ people off.
+- CME entries include the conference link.
+- To pause: comment out the `crons` block in `vercel.json` and redeploy.
+- To test now: **Vercel Dashboard → Cron Jobs → Run Now** on
+  `/api/cron-weekly-digest`.
+- If `RESEND_API_KEY` isn't set, the endpoint returns
+  `{ skipped: true, reason: 'RESEND_API_KEY not set' }` and does nothing.
 
 ## Conflict rules cheat sheet
 
-For **Time Away** entries only (Events and Coverage Adds have no conflict
-rules — admin always direct-creates them).
+For Time Away submissions only (Events / Coverage Adds bypass).
 
 | Range            | Other members already off (approved or pending) | Result                |
 | ---------------- | ----------------------------------------------- | --------------------- |
@@ -203,17 +214,35 @@ rules — admin always direct-creates them).
 | Multiple days    | 0 across every day                              | OK → pending          |
 | Multiple days    | ≥ 1 on any day                                  | **Blocked**           |
 
-The same person submitting twice doesn't block themselves — only OTHER members
-count.
+The same member submitting twice doesn't block themselves.
+
+## Notes field
+
+Every entry has an optional **Notes** field. Visibility:
+
+- **Admin** sees all notes on all entries.
+- **Owner** sees their own notes on their own entries.
+- **Other team members** see the entry but the Notes row is hidden in the
+  detail modal and the Day Overview preview.
+
+The submission UI helper text says: *"Visible to admin and you only."*
+
+## CME conference link
+
+When type = CME:
+
+- Field appears in the request modal.
+- **Required** for member submissions (must be a valid `http(s)` URL).
+- **Optional** for admin direct-create.
+- Renders as a clickable link in the detail modal.
+- Included in the Sunday-night digest.
 
 ## Admin overrides
 
-- `/api/admin-create` skips the conflict check entirely → admin can stack any
-  number of entries on any day.
-- `/api/admin-decide` on **approve** re-runs the check against
-  *approved-only* entries. If a conflict is found, the UI shows a confirm
-  dialog with an **Override & Approve** button that re-submits with
-  `override: true`.
+- `/api/admin-create` skips conflict rules entirely.
+- `/api/admin-decide` on **approve** re-checks against approved-only
+  entries; on conflict, the UI shows a confirm dialog with **Override &
+  Approve**.
 
 ## Adding new team members later
 
@@ -222,9 +251,8 @@ insert into team_members (name, email, color) values
   ('New Person', 'new.person@example.com', '#3a5a6e');
 ```
 
-Pick any hex color from the established palette range — see the team_members
-seed in `supabase/seed.sql` for the institutional palette. Then send the
-person the URL and tell them to sign up via the "First Time?" tab.
+Pick a color from the established palette (see `supabase/seed.sql`). Then
+send the URL and tell them to sign up via "First Time?".
 
 To deactivate a member (preserves history):
 
@@ -232,28 +260,30 @@ To deactivate a member (preserves history):
 update team_members set active = false where email = 'former@example.com';
 ```
 
+## Troubleshooting
+
+- **Blank page, no error message** — open browser console (F12). The
+  watchdog in the page tells you what failed (env vars missing, CDN
+  blocked, Supabase URL wrong). Check the visible "Configuration Error"
+  message; it lists the most common causes.
+- **Push not working on iOS** — must be installed to home screen first.
+  iOS Safari only delivers push to standalone PWAs. After installing,
+  open the app, then tap **Enable** on the notifications prompt.
+- **Stale calendar** — fully close and reopen the PWA (swipe up + away on
+  iOS). The service worker activates the new shell on next launch.
+- **Email confirmation expired** — admin re-sends from
+  Supabase **Authentication → Users → ⋯ → Send magic link**.
+- **Digest didn't send** — check Vercel logs filtered to
+  `/api/cron-weekly-digest`. Verify `RESEND_API_KEY` is set and `ADMIN_EMAIL`
+  too. The endpoint logs which rows it tried to email.
+- **"You can only push to admin/member with token"** — the admin push
+  subscription is per-browser-per-tab. After the admin signs in for the
+  first time, the prompt re-appears so they can subscribe to admin
+  notifications too.
+
 ## Future extensions
 
-- **Per-person YTD tracking** with allowance configuration
-- **ICS export** so members can subscribe from their phones
-- **Configurable conflict thresholds** per category (e.g. allow up to 2 off
-  during low-volume weeks)
-- **Push notifications** for newly-decided requests
-- **Audit log** of all admin actions
-
-## Self-check
-
-After deploy, run through these by hand:
-
-1. **Visual fidelity** – warm-gray bg, white sheet with shadow, Inter +
-   Source Serif 4 loaded, teal accent on eyebrows / section tags / buttons.
-2. **Login flow** – both tabs, eligibility error states, account creation.
-3. **Auth guard** – visit `/index.html` while signed out → bounces to login.
-4. **Empty calendar** – fresh project with seed-only data renders cleanly.
-5. **Member request** – only Time Away types shown, no member field, live
-   preview works, conflict rules trigger correctly.
-6. **Admin add** – all 3 categories, all 8 types, member dropdown includes
-   "Team-wide", no conflict block.
-7. **Admin override** – approve a pending request that conflicts with an
-   already-approved entry → confirm dialog appears, override succeeds.
-8. **Email** – submitting a request triggers the Resend email (if configured).
+- Per-person YTD allowances with budget tracking
+- ICS export so members can subscribe from their phone calendar
+- Configurable conflict thresholds per category
+- Audit log of all admin actions

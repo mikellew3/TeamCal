@@ -1,14 +1,16 @@
 {
   "name": "mgh-team-calendar",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "MGH Robotic Surgery PA Team Calendar",
+  "description": "MGH Robotic Surgery PA Team Calendar (PWA)",
   "scripts": {
     "dev": "vercel dev",
-    "deploy": "vercel --prod"
+    "deploy": "vercel --prod",
+    "vapid": "node -e \"const w=require('web-push');const k=w.generateVAPIDKeys();console.log('VAPID_PUBLIC_KEY=' + k.publicKey);console.log('VAPID_PRIVATE_KEY=' + k.privateKey);\""
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.0"
+    "@supabase/supabase-js": "^2.45.0",
+    "web-push": "^3.6.7"
   },
   "engines": {
     "node": ">=18"

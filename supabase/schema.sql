@@ -1,5 +1,5 @@
--- MGH Robotic Surgery PA Team Calendar — Schema
--- Run this entire file in Supabase SQL editor on a fresh project.
+-- MGH Robotic Surgery PA Team Calendar — Schema (v2, PWA + push)
+-- Idempotent: safe to re-run when adding new columns / tables.
 
 -- =============================================================
 -- TABLES
@@ -18,26 +18,45 @@ create index if not exists team_members_auth_idx on team_members (auth_user_id);
 create index if not exists team_members_email_idx on team_members (lower(email));
 
 create table if not exists calendar_entries (
-  id             uuid primary key default gen_random_uuid(),
-  member_id      uuid references team_members(id) on delete cascade,
-  event_type     text not null
+  id               uuid primary key default gen_random_uuid(),
+  member_id        uuid references team_members(id) on delete cascade,
+  event_type       text not null
     check (event_type in ('pto', 'cme', 'pd', 'note', 'onb', 'shd', 'per_diem', 'swp')),
-  title          text,
-  start_date     date not null,
-  end_date       date not null,
-  status         text not null default 'pending'
+  title            text,
+  start_date       date not null,
+  end_date         date not null,
+  status           text not null default 'pending'
     check (status in ('pending', 'approved', 'denied')),
-  notes          text,
-  requested_at   timestamptz not null default now(),
-  decided_at     timestamptz,
-  decided_by     text,
+  notes            text,
+  conference_link  text,
+  requested_at     timestamptz not null default now(),
+  decided_at       timestamptz,
+  decided_by       text,
   constraint title_or_member check (member_id is not null or title is not null),
   constraint valid_date_range check (end_date >= start_date)
 );
+-- Add conference_link column for projects upgrading from v1.
+alter table calendar_entries add column if not exists conference_link text;
 create index if not exists calendar_entries_dates_idx  on calendar_entries (start_date, end_date);
 create index if not exists calendar_entries_status_idx on calendar_entries (status);
 create index if not exists calendar_entries_type_idx   on calendar_entries (event_type);
 create index if not exists calendar_entries_member_idx on calendar_entries (member_id);
+
+-- Push subscriptions. One row per device — a member with web + iOS install
+-- gets two rows. Admin subscriptions have member_id NULL and is_admin true.
+create table if not exists push_subscriptions (
+  id            uuid primary key default gen_random_uuid(),
+  member_id     uuid references team_members(id) on delete cascade,
+  is_admin      boolean not null default false,
+  endpoint      text not null unique,
+  p256dh        text not null,
+  auth          text not null,
+  user_agent    text,
+  created_at    timestamptz not null default now(),
+  last_used_at  timestamptz
+);
+create index if not exists push_subs_member_idx on push_subscriptions (member_id);
+create index if not exists push_subs_admin_idx  on push_subscriptions (is_admin);
 
 -- =============================================================
 -- HELPER FUNCTIONS
@@ -53,10 +72,7 @@ create or replace function entry_category(et text) returns text as $$
 $$ language sql immutable;
 
 -- Auto-link a newly-created auth.users row to a pre-existing team_members row
--- by matching email (case-insensitive). This is how provisioning works:
--- admin INSERTs a team_members row first, then the user signs up, and this
--- trigger ties them together. Without a matching team_members row, the
--- auth user can sign up but the auth guard on /index.html will sign them out.
+-- by matching email (case-insensitive).
 create or replace function link_auth_user_to_team_member() returns trigger as $$
 begin
   update team_members
@@ -72,8 +88,6 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function link_auth_user_to_team_member();
 
--- Convenience function for RLS policies / serverless functions: returns the
--- team_members.id for the currently-authenticated Supabase Auth user.
 create or replace function current_member_id() returns uuid as $$
   select id from team_members where auth_user_id = auth.uid() limit 1;
 $$ language sql stable security definer;
@@ -82,8 +96,9 @@ $$ language sql stable security definer;
 -- ROW LEVEL SECURITY
 -- =============================================================
 
-alter table team_members     enable row level security;
-alter table calendar_entries enable row level security;
+alter table team_members        enable row level security;
+alter table calendar_entries    enable row level security;
+alter table push_subscriptions  enable row level security;
 
 drop policy if exists "auth read team_members" on team_members;
 create policy "auth read team_members"
@@ -96,6 +111,12 @@ create policy "auth read calendar_entries"
   on calendar_entries for select
   to authenticated
   using (true);
+
+drop policy if exists "auth read own push subs" on push_subscriptions;
+create policy "auth read own push subs"
+  on push_subscriptions for select
+  to authenticated
+  using (member_id = current_member_id());
 
 -- NO direct insert/update/delete policies — all writes go through serverless
 -- functions using the service-role key, which bypasses RLS entirely.

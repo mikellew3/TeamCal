@@ -2,8 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Team Calendar · MGH Robotic Surgery PA</title>
+  <meta name="theme-color" content="#1f6b6b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="PA Calendar" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.json" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap" rel="stylesheet" />
@@ -436,7 +442,92 @@
       .chip { font-size:10px;padding:2px 6px 2px 7px; }
       .legend-grid { grid-template-columns:1fr; }
       .field-row { grid-template-columns:1fr; }
+      /* iOS forces zoom on inputs <16px, and modal taps need ≥44px */
+      .field input, .field select, .field textarea { font-size:16px; }
+      .modal-actions button { min-height:44px; }
+      .day-overview-row { min-height:48px; }
+      .chip { min-height:24px; }
+      .cell .num { min-height:18px; }
+      .cell { padding:6px 6px 6px; }
+      .page { margin:0; box-shadow:none; padding-top:max(20px, env(safe-area-inset-top)); padding-bottom:max(20px, env(safe-area-inset-bottom)); }
     }
+
+    /* ============ DAY OVERVIEW MODAL ============ */
+    .day-overview-list {
+      display:flex;flex-direction:column;gap:8px;
+      margin-top:8px;margin-bottom:12px;
+    }
+    .day-overview-row {
+      padding:10px 12px;
+      border:1px solid var(--line);border-radius:2px;
+      cursor:pointer;
+      transition:background 100ms ease,border-color 100ms ease;
+      display:flex;flex-direction:column;gap:4px;
+      min-height:44px;
+    }
+    .day-overview-row:hover { background:var(--paper-warm);border-color:var(--line-strong); }
+    .day-overview-row .row-meta { display:flex;justify-content:space-between;align-items:center;gap:8px; }
+    .day-overview-row .row-arrow { font-size:11px;color:var(--muted);font-family:'Inter';flex-shrink:0; }
+    .day-overview-row .note-preview {
+      font-size:11px;color:var(--muted);font-style:italic;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+    .day-overview-empty {
+      text-align:center;padding:40px 20px;
+      color:var(--ink-2);font-size:14px;
+    }
+    .day-overview-empty .helper { font-size:12px;color:var(--muted);margin-top:4px; }
+
+    /* ============ PUSH ENABLE PROMPT ============ */
+    .push-prompt {
+      background:var(--accent-soft);border:1px solid var(--accent);
+      border-radius:2px;padding:10px 14px;margin-bottom:14px;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+      font-size:12px;color:var(--ink);
+    }
+    .push-prompt .left { display:flex;align-items:center;gap:8px;min-width:0; }
+    .push-prompt .left strong { color:var(--accent); }
+    .push-prompt button { white-space:nowrap; }
+
+    /* ============ ADMIN ADD NOTICE ============ */
+    .admin-add-notice {
+      background:#f5ecd9;border-left:3px solid var(--warn);
+      padding:8px 12px;margin:0 0 14px;border-radius:2px;
+      font-size:11px;color:#8b6010;line-height:1.4;
+    }
+
+    /* ============ OFFLINE STATE ============ */
+    body.is-offline .footer #sync-status { color:var(--neg);font-weight:600; }
+    body.is-offline button.disable-when-offline { opacity:0.4;pointer-events:none; }
+
+    /* ============ INSTALL PROMPT (iOS) ============ */
+    .install-tip {
+      background:var(--paper-warm);border:1px solid var(--line);
+      padding:8px 12px;border-radius:2px;font-size:11px;color:var(--muted);
+      margin-bottom:12px;display:flex;align-items:center;gap:8px;justify-content:space-between;
+    }
+    .install-tip button {
+      font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
+      padding:4px 8px;border-color:var(--line-strong);
+    }
+
+    /* ============ CONFERENCE LINK IN DETAIL ============ */
+    .conf-link a { color:var(--accent);text-decoration:underline;word-break:break-all; }
+
+    /* ============ KPI: OFF TODAY NAMES ============ */
+    .kpi .val.names {
+      font-family:'Inter';
+      font-size:13px;font-weight:500;line-height:1.3;
+      letter-spacing:0;color:var(--ink);
+    }
+    .kpi .val.names .count {
+      font-family:'Source Serif 4',serif;
+      font-size:29px;font-weight:600;line-height:1;
+      letter-spacing:-0.01em;display:block;margin-bottom:2px;
+    }
+
+    /* Tap-target floor on desktop too */
+    button, .btn { min-height:32px; }
   </style>
 </head>
 <body>
@@ -464,8 +555,8 @@
         </div>
       </div>
       <div class="mast-r">
-        <button class="primary" id="btn-request">Request Time Away</button>
-        <button class="ghost" id="btn-add-entry" hidden>Add Entry</button>
+        <button class="primary disable-when-offline" id="btn-request">Request Time Away</button>
+        <button class="ghost disable-when-offline" id="btn-add-entry" hidden>Add Entry</button>
         <button class="ghost" id="btn-admin">Admin</button>
         <button class="ghost" id="btn-signout">Sign Out</button>
       </div>
@@ -473,10 +564,28 @@
 
     <!-- KPI STRIP -->
     <div class="kpis" id="kpis">
-      <div class="kpi"><div class="lbl">Days Off This Month</div><div class="val" id="kpi-month">0</div><div class="sub">approved time-away days</div></div>
-      <div class="kpi"><div class="lbl">Pending Requests</div><div class="val" id="kpi-pending">0</div><div class="sub" id="kpi-pending-sub">awaiting decision</div></div>
-      <div class="kpi"><div class="lbl">My PTO YTD</div><div class="val" id="kpi-mypto">0</div><div class="sub">approved days year-to-date</div></div>
-      <div class="kpi"><div class="lbl">Coverage Today</div><div class="val" id="kpi-coverage">—</div><div class="sub" id="kpi-coverage-sub">team available</div></div>
+      <div class="kpi"><div class="lbl">My Days Off This Month</div><div class="val" id="kpi-month">0</div><div class="sub">Your approved time away · current month</div></div>
+      <div class="kpi"><div class="lbl">Pending Requests</div><div class="val" id="kpi-pending">0</div><div class="sub" id="kpi-pending-sub">Awaiting decision</div></div>
+      <div class="kpi"><div class="lbl">Your PTO YTD</div><div class="val" id="kpi-mypto">0</div><div class="sub">Approved PTO days year-to-date</div></div>
+      <div class="kpi"><div class="lbl">Off Today</div><div class="val names" id="kpi-offtoday"><span class="count">0</span><span id="kpi-offtoday-names">No one off today</span></div></div>
+    </div>
+
+    <!-- PUSH ENABLE PROMPT -->
+    <div class="push-prompt" id="push-prompt" hidden>
+      <div class="left">
+        <strong>Notifications</strong>
+        <span id="push-prompt-text">Enable push notifications so you hear about request updates instantly.</span>
+      </div>
+      <div>
+        <button class="primary" id="btn-push-enable">Enable</button>
+        <button class="ghost" id="btn-push-dismiss">Not now</button>
+      </div>
+    </div>
+
+    <!-- INSTALL TO HOME SCREEN TIP (iOS only — no install prompt API) -->
+    <div class="install-tip" id="install-tip" hidden>
+      <span><strong style="color:var(--ink);">Install:</strong> tap the Share button → Add to Home Screen for the full app experience.</span>
+      <button class="ghost" id="btn-install-dismiss">Got it</button>
     </div>
 
     <!-- ADMIN PANEL -->
@@ -569,6 +678,22 @@
     </div>
   </div>
 
+  <!-- DAY OVERVIEW MODAL -->
+  <div class="modal-backdrop" id="day-overview-backdrop" data-modal>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="day-overview-title">
+      <div class="eyebrow">Day Overview</div>
+      <h2 id="day-overview-title">—</h2>
+      <div class="modal-sub" id="day-overview-sub">—</div>
+      <div id="day-overview-body"></div>
+      <div class="modal-actions">
+        <div class="left" id="day-overview-admin-actions" hidden>
+          <button class="primary" id="btn-day-add">Add Entry on This Day</button>
+        </div>
+        <button class="ghost" id="btn-day-overview-close">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- DETAIL MODAL -->
   <div class="modal-backdrop" id="detail-backdrop" data-modal>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
@@ -585,9 +710,10 @@
           <tr><td class="label">Member</td><td id="detail-member">—</td></tr>
           <tr><td class="label">Type</td><td id="detail-type">—</td></tr>
           <tr><td class="label">Range</td><td id="detail-range">—</td></tr>
-          <tr><td class="label">Notes</td><td id="detail-notes" class="note">—</td></tr>
-          <tr><td class="label">Submitted</td><td id="detail-submitted">—</td></tr>
-          <tr><td class="label">Decided</td><td id="detail-decided">—</td></tr>
+          <tr id="detail-conf-row" hidden><td class="label">Conference</td><td id="detail-conf" class="conf-link">—</td></tr>
+          <tr id="detail-notes-row"><td class="label">Notes</td><td id="detail-notes" class="note">—</td></tr>
+          <tr id="detail-submitted-row"><td class="label">Submitted</td><td id="detail-submitted">—</td></tr>
+          <tr id="detail-decided-row"><td class="label">Decided</td><td id="detail-decided">—</td></tr>
         </tbody>
       </table>
       <div class="modal-actions">
@@ -619,6 +745,10 @@
             <option value="pd">PD — Personal Day</option>
           </select>
         </div>
+        <div class="field" id="req-conf-field" hidden>
+          <label for="req-conf">Conference link <span style="color:var(--neg);text-transform:none;letter-spacing:0;">(required for CME)</span></label>
+          <input id="req-conf" type="url" placeholder="https://conference.example.com" />
+        </div>
         <div class="field-row">
           <div class="field">
             <label for="req-start">Start date</label>
@@ -635,6 +765,7 @@
         <div class="field">
           <label for="req-notes">Notes (optional)</label>
           <textarea id="req-notes" maxlength="500" placeholder="Anything Mike should know"></textarea>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:0.02em;">Visible to admin and you only.</div>
         </div>
 
         <div class="modal-actions">
@@ -651,6 +782,7 @@
       <div class="eyebrow">Admin · Direct Create</div>
       <h2 id="add-title">Add Entry</h2>
       <div class="modal-sub">No conflict checks — admin override applies.</div>
+      <div class="admin-add-notice">Adding directly — the member will <strong>not</strong> be notified.</div>
 
       <form id="add-form">
         <div class="field-row">
@@ -675,6 +807,10 @@
           <label for="add-title-input">Title (required if no member)</label>
           <input id="add-title-input" type="text" maxlength="120" />
         </div>
+        <div class="field" id="add-conf-field" hidden>
+          <label for="add-conf">Conference link (optional for admin)</label>
+          <input id="add-conf" type="url" placeholder="https://conference.example.com" />
+        </div>
         <div class="field-row">
           <div class="field">
             <label for="add-start">Start date</label>
@@ -685,7 +821,7 @@
             <input id="add-end" type="date" required />
           </div>
         </div>
-        <div class="field">
+        <div class="field" id="add-status-field">
           <label for="add-status">Status</label>
           <select id="add-status">
             <option value="approved">Approved</option>
@@ -735,6 +871,10 @@
           <label for="edit-title-input">Title</label>
           <input id="edit-title-input" type="text" maxlength="120" />
         </div>
+        <div class="field" id="edit-conf-field" hidden>
+          <label for="edit-conf">Conference link</label>
+          <input id="edit-conf" type="url" placeholder="https://conference.example.com" />
+        </div>
         <div class="field-row">
           <div class="field">
             <label for="edit-start">Start date</label>
@@ -745,7 +885,7 @@
             <input id="edit-end" type="date" required />
           </div>
         </div>
-        <div class="field">
+        <div class="field" id="edit-status-field">
           <label for="edit-status">Status</label>
           <select id="edit-status">
             <option value="pending">Pending</option>
@@ -927,6 +1067,22 @@
         document.getElementById('app').hidden = false;
         window.__bootFinished = true;
 
+        // Capture the public VAPID key, app URL for later use.
+        state.vapidPublicKey = env.VAPID_PUBLIC_KEY || null;
+        state.appUrl = env.APP_URL || window.location.origin;
+
+        // Register service worker (PWA shell + push receiver).
+        registerServiceWorker();
+
+        // Show iOS install tip if launched in browser tab on iPhone/iPad.
+        maybeShowInstallTip();
+
+        // Decide whether to surface the push-enable prompt.
+        maybeShowPushPrompt();
+
+        // ?entry={id} on URL → auto-open detail when entry exists.
+        autoOpenEntryFromUrl();
+
         state.supabase.auth.onAuthStateChange((event) => {
           if (event === 'SIGNED_OUT') window.location.replace('/login.html');
         });
@@ -1033,13 +1189,15 @@
       const reqStart = document.getElementById('req-start');
       const reqEnd = document.getElementById('req-end');
       const reqType = document.getElementById('req-type');
+      const reqConf = document.getElementById('req-conf');
       const updatePreview = () => updateRequestPreview();
       reqStart.addEventListener('change', () => {
         if (!reqEnd.value || reqEnd.value < reqStart.value) reqEnd.value = reqStart.value;
         updatePreview();
       });
       reqEnd.addEventListener('change', updatePreview);
-      reqType.addEventListener('change', updatePreview);
+      reqType.addEventListener('change', () => { updateReqConfVisibility(); updatePreview(); });
+      reqConf.addEventListener('input', updatePreview);
       reqForm.addEventListener('submit', submitRequest);
 
       // Admin login form
@@ -1047,16 +1205,35 @@
 
       // Admin add form
       const addCat = document.getElementById('add-category');
-      addCat.addEventListener('change', () => populateTypeSelect('add-category', 'add-type'));
+      const addTypeEl = document.getElementById('add-type');
+      addCat.addEventListener('change', () => { populateTypeSelect('add-category', 'add-type'); updateAddCmeAndStatusVisibility(); });
+      addTypeEl.addEventListener('change', updateAddCmeAndStatusVisibility);
       populateTypeSelect('add-category', 'add-type');
       populateMemberSelect('add-member', true);
+      updateAddCmeAndStatusVisibility();
       document.getElementById('add-form').addEventListener('submit', submitAdminCreate);
 
       // Admin edit form
       const editCat = document.getElementById('edit-category');
-      editCat.addEventListener('change', () => populateTypeSelect('edit-category', 'edit-type'));
+      const editTypeEl = document.getElementById('edit-type');
+      editCat.addEventListener('change', () => { populateTypeSelect('edit-category', 'edit-type'); updateEditCmeAndStatusVisibility(); });
+      editTypeEl.addEventListener('change', updateEditCmeAndStatusVisibility);
       populateMemberSelect('edit-member', true);
       document.getElementById('edit-form').addEventListener('submit', submitAdminEdit);
+
+      // Day Overview close
+      document.getElementById('btn-day-overview-close').onclick = () => closeModal('day-overview-backdrop');
+
+      // Push prompt
+      document.getElementById('btn-push-enable').onclick   = enablePush;
+      document.getElementById('btn-push-dismiss').onclick  = () => {
+        sessionStorage.setItem('push_dismissed', '1');
+        document.getElementById('push-prompt').hidden = true;
+      };
+      document.getElementById('btn-install-dismiss').onclick = () => {
+        localStorage.setItem('install_tip_dismissed', '1');
+        document.getElementById('install-tip').hidden = true;
+      };
 
       // Detail action buttons
       document.getElementById('btn-detail-approve').onclick = () => decideEntry('approved');
@@ -1064,6 +1241,38 @@
       document.getElementById('btn-detail-reset').onclick   = () => decideEntry('pending');
       document.getElementById('btn-detail-edit').onclick    = openEditFromDetail;
       document.getElementById('btn-delete').onclick         = deleteEntry;
+
+      // Online/offline detection
+      window.addEventListener('online',  updateOnlineState);
+      window.addEventListener('offline', updateOnlineState);
+      updateOnlineState();
+    }
+
+    function updateAddCmeAndStatusVisibility() {
+      const t = document.getElementById('add-type').value;
+      const cat = document.getElementById('add-category').value;
+      document.getElementById('add-conf-field').hidden = t !== 'cme';
+      // Status only meaningful for time_away.
+      document.getElementById('add-status-field').hidden = cat !== 'time_away';
+    }
+    function updateEditCmeAndStatusVisibility() {
+      const t = document.getElementById('edit-type').value;
+      const cat = document.getElementById('edit-category').value;
+      document.getElementById('edit-conf-field').hidden = t !== 'cme';
+      document.getElementById('edit-status-field').hidden = cat !== 'time_away';
+    }
+
+    function updateOnlineState() {
+      const offline = !navigator.onLine;
+      document.body.classList.toggle('is-offline', offline);
+      const submit = document.getElementById('btn-req-submit');
+      const btns = document.querySelectorAll('button.disable-when-offline');
+      btns.forEach(b => { b.disabled = offline; });
+      if (offline) {
+        setSync('Offline — changes blocked', true);
+      } else {
+        setSync(`Last sync ${new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`);
+      }
     }
 
     function isAdminMode() { return !!state.adminToken; }
@@ -1092,52 +1301,58 @@
       const month = state.viewMonth;
       const monthStart = ymd(firstOfMonth(month));
       const monthEnd   = ymd(lastOfMonth(month));
-      let monthDays = 0, pending = 0, myYTD = 0, today = ymd(new Date());
+      const today = ymd(new Date());
       const yearStart = `${new Date().getFullYear()}-01-01`;
       const yearEnd   = `${new Date().getFullYear()}-12-31`;
+      let myMonthDays = 0, pending = 0, myYTD = 0;
 
       for (const e of state.entries) {
         if (e.status === 'pending') pending++;
-        if (TIME_AWAY_TYPES.includes(e.event_type) && e.member_id) {
-          if (e.status === 'approved') {
-            monthDays += daysOverlap(e.start_date, e.end_date, monthStart, monthEnd);
-            if (e.member_id === state.me.id) {
-              myYTD += daysOverlap(e.start_date, e.end_date, yearStart, yearEnd);
-            }
+        if (TIME_AWAY_TYPES.includes(e.event_type) && e.member_id === state.me.id && e.status === 'approved') {
+          myMonthDays += daysOverlap(e.start_date, e.end_date, monthStart, monthEnd);
+          if (e.event_type === 'pto') {
+            myYTD += daysOverlap(e.start_date, e.end_date, yearStart, yearEnd);
           }
         }
       }
 
-      const offToday = new Set();
+      // Off Today: distinct members + ordered names.
+      const offTodayIds = new Set();
+      const offTodayNames = [];
       for (const e of state.entries) {
         if (TIME_AWAY_TYPES.includes(e.event_type)
             && e.status === 'approved'
             && e.member_id
-            && today >= e.start_date && today <= e.end_date) {
-          offToday.add(e.member_id);
+            && today >= e.start_date && today <= e.end_date
+            && !offTodayIds.has(e.member_id)) {
+          offTodayIds.add(e.member_id);
+          const m = state.members.find(x => x.id === e.member_id);
+          if (m) offTodayNames.push(m.name);
         }
       }
-      const teamSize = state.members.filter(m => m.active).length;
-      const available = Math.max(0, teamSize - offToday.size);
-      const pct = teamSize > 0 ? Math.round((available / teamSize) * 100) : 0;
+      offTodayNames.sort();
 
-      document.getElementById('kpi-month').textContent = monthDays;
+      document.getElementById('kpi-month').textContent = myMonthDays;
       const pendingEl = document.getElementById('kpi-pending');
       pendingEl.textContent = pending;
       pendingEl.classList.toggle('pos', pending === 0);
-      document.getElementById('kpi-pending-sub').textContent = pending === 0 ? 'all clear' : 'awaiting decision';
+      pendingEl.classList.toggle('warn', pending > 0);
+      document.getElementById('kpi-pending-sub').textContent = pending === 0 ? 'All clear' : 'Awaiting decision';
       document.getElementById('kpi-mypto').textContent = myYTD;
 
-      const covEl = document.getElementById('kpi-coverage');
-      covEl.textContent = teamSize === 0 ? '—' : `${pct}%`;
-      covEl.classList.remove('pos','warn','neg');
-      if (teamSize > 0) {
-        if (pct >= 80) covEl.classList.add('pos');
-        else if (pct >= 60) covEl.classList.add('warn');
-        else covEl.classList.add('neg');
-      }
-      document.getElementById('kpi-coverage-sub').textContent =
-        teamSize === 0 ? '—' : `${available} of ${teamSize} available`;
+      const countEl = document.querySelector('#kpi-offtoday .count');
+      const namesEl = document.getElementById('kpi-offtoday-names');
+      countEl.textContent = offTodayNames.length;
+      namesEl.textContent = formatOffTodayNames(offTodayNames);
+    }
+
+    function formatOffTodayNames(names) {
+      if (!names.length) return 'No one off today';
+      const isMobile = window.matchMedia('(max-width: 720px)').matches;
+      const max = isMobile ? 2 : 3;
+      const firsts = names.map(n => n.split(' ')[0]);
+      if (firsts.length <= max) return firsts.join(', ');
+      return `${firsts.slice(0, max).join(', ')} +${firsts.length - max}`;
     }
 
     function renderCalendar() {
@@ -1214,17 +1429,18 @@
           more.textContent = `+${hidden} more`;
           more.addEventListener('click', (ev) => {
             ev.stopPropagation();
-            // Open the first hidden entry's detail; user can navigate from there.
-            openDetail(sorted[max]);
+            openDayOverview(dayStr);
           });
           chips.appendChild(more);
         }
 
-        if (isAdmin && !c.outside) {
-          cell.classList.add('admin-can-add');
+        // In-month cells are always tappable (Day Overview). Out-of-month
+        // cells are non-interactive — no click handler, default cursor.
+        if (!c.outside) {
+          cell.style.cursor = 'pointer';
           cell.addEventListener('click', (ev) => {
             if (ev.target.closest('.chip') || ev.target.closest('.cell-more')) return;
-            openAddModal({ defaultDate: dayStr });
+            openDayOverview(dayStr);
           });
         }
         grid.appendChild(cell);
@@ -1273,10 +1489,38 @@
       document.getElementById('req-start').value = t;
       document.getElementById('req-end').value = t;
       document.getElementById('req-notes').value = '';
+      document.getElementById('req-conf').value = '';
+      document.getElementById('req-conf-field').hidden = true;
       document.getElementById('req-preview').hidden = true;
       document.getElementById('btn-req-submit').disabled = false;
       openModal('request-backdrop');
       updateRequestPreview();
+    }
+
+    function updateReqConfVisibility() {
+      const isCme = document.getElementById('req-type').value === 'cme';
+      document.getElementById('req-conf-field').hidden = !isCme;
+      // CME requires a valid URL; toggle submit-btn accordingly when type changes.
+      validateReqSubmit();
+    }
+    function validateReqSubmit() {
+      const isCme = document.getElementById('req-type').value === 'cme';
+      const conf  = document.getElementById('req-conf').value.trim();
+      const start = document.getElementById('req-start').value;
+      const end   = document.getElementById('req-end').value;
+      const btn   = document.getElementById('btn-req-submit');
+      let bad = !start || !end || end < start;
+      if (isCme && !isValidHttpUrl(conf)) bad = true;
+      // Don't override the conflict-preview block state — only force-disable
+      // when we have an obvious local validation failure.
+      if (bad) btn.disabled = true;
+    }
+    function isValidHttpUrl(s) {
+      if (!s) return false;
+      try {
+        const u = new URL(s.trim());
+        return u.protocol === 'http:' || u.protocol === 'https:';
+      } catch { return false; }
     }
 
     function updateRequestPreview() {
@@ -1331,18 +1575,29 @@
       previewEl.hidden = false;
       previewEl.className = `conflict-preview ${state_}`;
       previewEl.innerHTML = html;
-      submitBtn.disabled = (state_ === 'block');
+      const isCme = document.getElementById('req-type').value === 'cme';
+      const conf  = document.getElementById('req-conf').value.trim();
+      const cmeBad = isCme && !isValidHttpUrl(conf);
+      submitBtn.disabled = (state_ === 'block') || cmeBad;
     }
 
     async function submitRequest(ev) {
       ev.preventDefault();
       const btn = document.getElementById('btn-req-submit');
       btn.disabled = true;
+      const eventType = document.getElementById('req-type').value;
+      const conf = document.getElementById('req-conf').value.trim();
+      if (eventType === 'cme' && !isValidHttpUrl(conf)) {
+        toast('CME requests need a valid conference link.', 'error');
+        btn.disabled = false;
+        return;
+      }
       const body = {
-        event_type: document.getElementById('req-type').value,
+        event_type: eventType,
         start_date: document.getElementById('req-start').value,
         end_date:   document.getElementById('req-end').value,
         notes:      document.getElementById('req-notes').value.trim() || null,
+        conference_link: eventType === 'cme' ? conf : null,
       };
       try {
         const jwt = state.session?.access_token;
@@ -1382,6 +1637,7 @@
       state.detailEntry = entry;
       const member = entry.member_id ? state.members.find(m => m.id === entry.member_id) : null;
       const meta = TYPE_META[entry.event_type] || {};
+      const isTimeAway = meta.category === 'time_away';
       const days = expandRange(entry.start_date, entry.end_date).length;
       const range = entry.start_date === entry.end_date
         ? formatDayLong(entry.start_date)
@@ -1395,26 +1651,288 @@
         entry.title || (member ? `${meta.label} — ${member.name}` : meta.label);
       document.getElementById('detail-sub').textContent = range;
       document.getElementById('detail-days').textContent = days;
+
+      // Status pill: only Time Away has a status concept.
       const statusEl = document.getElementById('detail-status');
-      statusEl.textContent = STATUS_LABEL[entry.status] || entry.status;
-      statusEl.className = `pill ${entry.status}`;
+      if (isTimeAway) {
+        statusEl.textContent = STATUS_LABEL[entry.status] || entry.status;
+        statusEl.className = `pill ${entry.status}`;
+        statusEl.style.display = '';
+      } else {
+        statusEl.style.display = 'none';
+      }
 
       document.getElementById('detail-member').textContent = member ? member.name : 'Team-wide';
       document.getElementById('detail-type').textContent = meta.label || entry.event_type;
       document.getElementById('detail-range').textContent = range;
-      document.getElementById('detail-notes').textContent = entry.notes || '—';
-      document.getElementById('detail-submitted').textContent = formatTimestamp(entry.requested_at);
-      document.getElementById('detail-decided').textContent =
-        entry.decided_at ? `${formatTimestamp(entry.decided_at)}${entry.decided_by ? ' · ' + entry.decided_by : ''}` : '—';
+
+      // Conference link row (CME).
+      const confRow = document.getElementById('detail-conf-row');
+      const confEl = document.getElementById('detail-conf');
+      if (entry.conference_link) {
+        confRow.hidden = false;
+        confEl.innerHTML = `<a href="${escapeHtml(entry.conference_link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.conference_link)}</a>`;
+      } else {
+        confRow.hidden = true;
+      }
+
+      // Notes visibility: admin always; entry owner always; otherwise hide row.
+      const canSeeNotes = isAdminMode() || (entry.member_id && entry.member_id === state.me?.id);
+      const notesRow = document.getElementById('detail-notes-row');
+      if (canSeeNotes) {
+        notesRow.hidden = false;
+        document.getElementById('detail-notes').textContent = entry.notes || '—';
+      } else {
+        notesRow.hidden = true;
+      }
+
+      // Decided row: only meaningful for Time Away.
+      const decRow = document.getElementById('detail-decided-row');
+      const subRow = document.getElementById('detail-submitted-row');
+      if (isTimeAway) {
+        subRow.hidden = false;
+        decRow.hidden = false;
+        document.getElementById('detail-submitted').textContent = formatTimestamp(entry.requested_at);
+        document.getElementById('detail-decided').textContent =
+          entry.decided_at ? `${formatTimestamp(entry.decided_at)}${entry.decided_by ? ' · ' + entry.decided_by : ''}` : '—';
+      } else {
+        subRow.hidden = true;
+        decRow.hidden = true;
+      }
 
       const isAdmin = isAdminMode();
       document.getElementById('detail-admin-actions').hidden = !isAdmin;
       document.getElementById('btn-detail-edit').hidden = !isAdmin;
-      document.getElementById('btn-detail-approve').hidden = !(isAdmin && entry.status !== 'approved');
-      document.getElementById('btn-detail-deny').hidden    = !(isAdmin && entry.status !== 'denied');
-      document.getElementById('btn-detail-reset').hidden   = !(isAdmin && entry.status !== 'pending');
+      // Events / Coverage: NO approve / deny / reset — just edit + delete.
+      const showStatusActions = isAdmin && isTimeAway;
+      document.getElementById('btn-detail-approve').hidden = !(showStatusActions && entry.status !== 'approved');
+      document.getElementById('btn-detail-deny').hidden    = !(showStatusActions && entry.status !== 'denied');
+      document.getElementById('btn-detail-reset').hidden   = !(showStatusActions && entry.status !== 'pending');
 
       openModal('detail-backdrop');
+    }
+
+    /* ============================================================
+     * DAY OVERVIEW MODAL
+     * ============================================================ */
+    function openDayOverview(dayStr) {
+      const date = new Date(`${dayStr}T00:00:00`);
+      const titleStr = date.toLocaleDateString('en-US',
+        { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+      const longLabel = date.toLocaleDateString('en-US',
+        { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+      document.getElementById('day-overview-title').textContent =
+        `${date.toLocaleDateString('en-US', { weekday: 'long' })} · ${date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+
+      const entries = entriesOn(dayStr).sort((a, b) => {
+        const ca = TYPE_META[a.event_type]?.category || 'zzz';
+        const cb = TYPE_META[b.event_type]?.category || 'zzz';
+        if (ca !== cb) return ca.localeCompare(cb);
+        return (a.start_date || '').localeCompare(b.start_date || '');
+      });
+
+      // Sub-line: count summary with breakdown (Off aggregates Time Away).
+      const sub = document.getElementById('day-overview-sub');
+      if (entries.length === 0) {
+        sub.textContent = 'No entries on this day';
+      } else {
+        const offCount = entries.filter(e => TIME_AWAY_TYPES.includes(e.event_type)).length;
+        const breakdown = [];
+        if (offCount) breakdown.push(`${offCount} off`);
+        const counts = {};
+        for (const e of entries) {
+          if (TIME_AWAY_TYPES.includes(e.event_type)) continue;
+          const lbl = (TYPE_META[e.event_type]?.label || e.event_type).toLowerCase();
+          counts[lbl] = (counts[lbl] || 0) + 1;
+        }
+        for (const [lbl, n] of Object.entries(counts)) breakdown.push(`${n} ${lbl}`);
+        sub.textContent = `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} · ${breakdown.join(', ')}`;
+      }
+
+      // Body
+      const body = document.getElementById('day-overview-body');
+      body.innerHTML = '';
+      if (entries.length === 0) {
+        body.innerHTML = `<div class="day-overview-empty">No entries on this day.<div class="helper">Calendar is clear.</div></div>`;
+      } else {
+        const list = document.createElement('div');
+        list.className = 'day-overview-list';
+        for (const e of entries) {
+          const row = document.createElement('div');
+          row.className = 'day-overview-row';
+          const meta = document.createElement('div');
+          meta.className = 'row-meta';
+          const chip = renderChip(e);
+          chip.style.cursor = 'pointer';
+          chip.style.pointerEvents = 'none';
+          const arrow = document.createElement('span');
+          arrow.className = 'row-arrow';
+          arrow.textContent = 'View detail →';
+          meta.appendChild(chip);
+          meta.appendChild(arrow);
+          row.appendChild(meta);
+
+          const canSeeNotes = isAdminMode() || (e.member_id && e.member_id === state.me?.id);
+          if (canSeeNotes && e.notes) {
+            const np = document.createElement('div');
+            np.className = 'note-preview';
+            const preview = e.notes.length > 60 ? e.notes.slice(0, 60).trim() + '…' : e.notes;
+            np.textContent = `Notes: ${preview}`;
+            row.appendChild(np);
+          }
+          row.addEventListener('click', () => {
+            closeModal('day-overview-backdrop');
+            setTimeout(() => openDetail(e), 100);
+          });
+          list.appendChild(row);
+        }
+        body.appendChild(list);
+      }
+
+      const isAdmin = isAdminMode();
+      const adminActions = document.getElementById('day-overview-admin-actions');
+      adminActions.hidden = !isAdmin;
+      document.getElementById('btn-day-add').onclick = () => {
+        closeModal('day-overview-backdrop');
+        setTimeout(() => openAddModal({ defaultDate: dayStr }), 100);
+      };
+      document.getElementById('btn-day-overview-close').onclick = () => closeModal('day-overview-backdrop');
+
+      openModal('day-overview-backdrop');
+    }
+
+    /* ============================================================
+     * PWA — service worker registration
+     * ============================================================ */
+    async function registerServiceWorker() {
+      if (!('serviceWorker' in navigator)) return;
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        state.swRegistration = reg;
+        // If a new SW is waiting, ask it to activate.
+        if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
+        reg.addEventListener('updatefound', () => {
+          const sw = reg.installing;
+          if (!sw) return;
+          sw.addEventListener('statechange', () => {
+            if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+              // New SW available — activate next page-load.
+              sw.postMessage('SKIP_WAITING');
+            }
+          });
+        });
+      } catch (e) {
+        console.error('SW register failed', e);
+      }
+    }
+
+    /* ============================================================
+     * Install tip (iOS only — no beforeinstallprompt on iOS)
+     * ============================================================ */
+    function maybeShowInstallTip() {
+      if (localStorage.getItem('install_tip_dismissed') === '1') return;
+      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                        || window.navigator.standalone === true;
+      if (isIos && !isStandalone) {
+        document.getElementById('install-tip').hidden = false;
+      }
+    }
+
+    /* ============================================================
+     * URL ?entry={id} — auto-open detail
+     * ============================================================ */
+    function autoOpenEntryFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get('entry');
+      if (!id) return;
+      const entry = state.entries.find(e => e.id === id);
+      if (entry) openDetail(entry);
+      // Strip ?entry= from URL so back/forward doesn't re-open.
+      const url = new URL(window.location.href);
+      url.searchParams.delete('entry');
+      window.history.replaceState({}, '', url.toString());
+    }
+
+    /* ============================================================
+     * PUSH NOTIFICATIONS
+     * ============================================================ */
+    function maybeShowPushPrompt() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      if (!state.vapidPublicKey) return;
+      if (Notification.permission === 'denied') return;
+      if (sessionStorage.getItem('push_dismissed') === '1') return;
+      // If permission is already granted AND we have an active subscription,
+      // don't nag.
+      if (Notification.permission === 'granted') {
+        navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription())
+          .then(sub => {
+            if (!sub) document.getElementById('push-prompt').hidden = false;
+          });
+      } else {
+        document.getElementById('push-prompt').hidden = false;
+      }
+    }
+
+    async function enablePush() {
+      const btn = document.getElementById('btn-push-enable');
+      btn.disabled = true;
+      try {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+          toast('Push not supported on this browser.', 'error');
+          return;
+        }
+        if (!state.vapidPublicKey) {
+          toast('Server not configured for push (VAPID keys missing).', 'error');
+          return;
+        }
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') {
+          toast('Notifications blocked. Enable them in your browser settings.', 'error');
+          return;
+        }
+        const reg = await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(state.vapidPublicKey),
+          });
+        }
+        // Subscribe both as member AND admin if currently in admin mode.
+        const memberRes = await fetch('/api/subscribe-push', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.session.access_token}`,
+          },
+          body: JSON.stringify({ subscription: sub.toJSON(), scope: 'member' }),
+        });
+        if (!memberRes.ok) throw new Error('member subscribe failed');
+        if (isAdminMode()) {
+          await fetch('/api/subscribe-push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscription: sub.toJSON(), scope: 'admin', admin_token: state.adminToken }),
+          });
+        }
+        document.getElementById('push-prompt').hidden = true;
+        toast('Notifications enabled.', 'success');
+      } catch (err) {
+        console.error('enablePush', err);
+        toast('Could not enable notifications.', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+      return outputArray;
     }
 
     /* ============================================================
@@ -1455,6 +1973,9 @@
         closeModal('adminlogin-backdrop');
         refreshAdminUi();
         renderAll();
+        // Re-show push prompt if not yet subscribed for admin scope.
+        document.getElementById('push-prompt').hidden = false;
+        sessionStorage.removeItem('push_dismissed');
         toast('Admin session active.', 'success');
       } catch (err) {
         console.error(err);
@@ -1545,11 +2066,13 @@
       populateTypeSelect('add-category', 'add-type');
       document.getElementById('add-member').value = '';
       document.getElementById('add-title-input').value = '';
+      document.getElementById('add-conf').value = '';
       const t = opts.defaultDate || ymd(new Date());
       document.getElementById('add-start').value = t;
       document.getElementById('add-end').value = t;
       document.getElementById('add-status').value = 'approved';
       document.getElementById('add-notes').value = '';
+      updateAddCmeAndStatusVisibility();
       openModal('add-backdrop');
     }
 
@@ -1559,14 +2082,17 @@
       btn.disabled = true;
       const member_id = document.getElementById('add-member').value || null;
       const title = document.getElementById('add-title-input').value.trim();
+      const eventType = document.getElementById('add-type').value;
+      const conf = document.getElementById('add-conf').value.trim();
       const entry = {
         member_id,
-        event_type: document.getElementById('add-type').value,
+        event_type: eventType,
         title: title || null,
         start_date: document.getElementById('add-start').value,
         end_date:   document.getElementById('add-end').value,
         status:     document.getElementById('add-status').value,
         notes:      document.getElementById('add-notes').value.trim() || null,
+        conference_link: eventType === 'cme' && conf ? conf : null,
       };
       if (!member_id && !entry.title) {
         toast('Pick a member or enter a title.', 'error');
@@ -1607,10 +2133,12 @@
       document.getElementById('edit-type').value = entry.event_type;
       document.getElementById('edit-member').value = entry.member_id || '';
       document.getElementById('edit-title-input').value = entry.title || '';
+      document.getElementById('edit-conf').value = entry.conference_link || '';
       document.getElementById('edit-start').value = entry.start_date;
       document.getElementById('edit-end').value = entry.end_date;
       document.getElementById('edit-status').value = entry.status;
       document.getElementById('edit-notes').value = entry.notes || '';
+      updateEditCmeAndStatusVisibility();
       closeModal('detail-backdrop');
       openModal('edit-backdrop');
     }
@@ -1621,15 +2149,20 @@
       if (!entry) return;
       const btn = document.getElementById('btn-edit-submit');
       btn.disabled = true;
+      const eventType = document.getElementById('edit-type').value;
+      const cat = document.getElementById('edit-category').value;
+      const conf = document.getElementById('edit-conf').value.trim();
       const patch = {
-        event_type: document.getElementById('edit-type').value,
+        event_type: eventType,
         member_id:  document.getElementById('edit-member').value || null,
         title:      document.getElementById('edit-title-input').value.trim() || null,
         start_date: document.getElementById('edit-start').value,
         end_date:   document.getElementById('edit-end').value,
-        status:     document.getElementById('edit-status').value,
         notes:      document.getElementById('edit-notes').value.trim() || null,
+        conference_link: eventType === 'cme' ? (conf || null) : null,
       };
+      // Only include status when category is time_away (others have no status concept).
+      if (cat === 'time_away') patch.status = document.getElementById('edit-status').value;
       if (!patch.member_id && !patch.title) {
         toast('Pick a member or enter a title.', 'error');
         btn.disabled = false;

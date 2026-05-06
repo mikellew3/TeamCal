@@ -1,22 +1,15 @@
 import {
   serviceClient,
-  readJson,
-  send,
-  methodGuard,
-  TIME_AWAY_TYPES,
-  isYmd,
-  timeAwayConflicts,
-  classifyConflict,
+  readJson, send, methodGuard,
+  TIME_AWAY_TYPES, TYPE_LABEL,
+  isYmd, isHttpUrl,
+  timeAwayConflicts, classifyConflict,
+  dayCount, formatRange,
 } from './_lib.js';
+import { sendPush } from './_push.js';
 
-// POST { event_type, start_date, end_date, notes? } with `Authorization: Bearer <jwt>`
-// Submits a Time Away request for the authenticated team member.
-//
-// 1. Auth: resolve user from supabase JWT
-// 2. Look up team_members row by auth_user_id (or email fallback)
-// 3. Validate body, restrict to time-away types
-// 4. Conflict check (rejects on `block` state)
-// 5. Insert pending entry, fire-and-forget notify-request
+// POST { event_type, start_date, end_date, notes?, conference_link? }
+// with `Authorization: Bearer <jwt>`.
 export default async function handler(req, res) {
   if (!methodGuard(req, res, ['POST'])) return;
 
@@ -29,12 +22,10 @@ export default async function handler(req, res) {
     console.error(e); return send(res, 500, { error: 'server_error' });
   }
 
-  // Resolve auth user from the JWT.
   const { data: userData, error: userErr } = await supa.auth.getUser(jwt);
   if (userErr || !userData?.user) return send(res, 401, { error: 'invalid_token' });
   const user = userData.user;
 
-  // Map auth user → team_members row.
   let { data: member, error: mErr } = await supa
     .from('team_members')
     .select('id, name, email, active')
@@ -53,7 +44,7 @@ export default async function handler(req, res) {
   if (!member.active) return send(res, 403, { error: 'inactive_member' });
 
   const body = await readJson(req);
-  const { event_type, start_date, end_date, notes } = body || {};
+  const { event_type, start_date, end_date, notes, conference_link } = body || {};
 
   if (!TIME_AWAY_TYPES.includes(event_type)) {
     return send(res, 400, { error: 'invalid_type', detail: 'Members may only submit time-away requests.' });
@@ -64,11 +55,15 @@ export default async function handler(req, res) {
   if (end_date < start_date) {
     return send(res, 400, { error: 'invalid_date_range' });
   }
+  if (event_type === 'cme') {
+    if (!isHttpUrl(conference_link)) {
+      return send(res, 400, { error: 'conference_link_required', detail: 'CME requests require a valid conference link (http/https URL).' });
+    }
+  }
 
-  // Conflict check.
   let conflicts;
   try {
-    conflicts = await timeAwayConflicts(supa, member.id, start_date, end_date);
+    conflicts = await timeAwayConflicts(supa, member.id, start_date, end_date, 'active');
   } catch (e) {
     console.error('conflict-check', e);
     return send(res, 500, { error: 'server_error' });
@@ -82,7 +77,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // Insert pending entry.
   const insert = await supa
     .from('calendar_entries')
     .insert({
@@ -92,6 +86,7 @@ export default async function handler(req, res) {
       end_date,
       status: 'pending',
       notes: typeof notes === 'string' && notes.trim() ? notes.trim() : null,
+      conference_link: event_type === 'cme' && isHttpUrl(conference_link) ? conference_link.trim() : null,
     })
     .select('*')
     .single();
@@ -101,24 +96,35 @@ export default async function handler(req, res) {
     return send(res, 500, { error: 'insert_failed' });
   }
 
-  // Fire-and-forget admin notification.
-  notifyAdmin(req, insert.data.id).catch(err => console.error('notify', err));
+  const entry = insert.data;
+  const days = dayCount(entry.start_date, entry.end_date);
+  const range = formatRange(entry.start_date, entry.end_date);
+  const typeLabel = TYPE_LABEL[entry.event_type] || entry.event_type;
 
-  return send(res, 200, { id: insert.data.id, entry: insert.data, watch: verdict.state === 'watch' });
+  // Fire-and-forget admin notifications: push + email.
+  sendPush({
+    recipientType: 'admin',
+    payload: {
+      title: `New ${typeLabel} request`,
+      body: `${member.name} requested ${days} day${days === 1 ? '' : 's'} — ${range}`,
+      tag: `req-${entry.id}`,
+      entryId: entry.id,
+      url: `/index.html?entry=${entry.id}`,
+    },
+  }).catch(err => console.error('push admin', err));
+
+  notifyAdmin(req, entry.id).catch(err => console.error('email admin', err));
+
+  return send(res, 200, { id: entry.id, entry, watch: verdict.state === 'watch' });
 }
 
 async function notifyAdmin(req, entryId) {
   const proto = (req.headers['x-forwarded-proto'] || 'https').toString();
   const host  = req.headers['host'];
   if (!host) return;
-  const url = `${proto}://${host}/api/notify-request`;
-  try {
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entry_id: entryId }),
-    });
-  } catch (e) {
-    console.error('notify fetch', e);
-  }
+  await fetch(`${proto}://${host}/api/notify-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entry_id: entryId }),
+  });
 }
