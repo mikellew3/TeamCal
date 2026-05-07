@@ -289,6 +289,42 @@
       max-height:calc(100vh - 40px);overflow-y:auto;
     }
     .modal.wide { max-width:560px; }
+    .modal.x-wide { max-width:760px; }
+    .members-list { display:flex;flex-direction:column;gap:0;border-top:1px solid var(--line);margin-top:8px; }
+    .member-row {
+      display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;
+      padding:10px 0;border-bottom:1px solid var(--line);
+    }
+    .member-row .who { display:flex;align-items:center;gap:8px;min-width:0; }
+    .member-row .who .dot { width:10px;height:10px;border-radius:50%;flex-shrink:0; }
+    .member-row .who .meta { min-width:0; }
+    .member-row .who .name { font-weight:600;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .member-row .who .email { font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .member-row .badge {
+      display:inline-block;font-size:9px;letter-spacing:0.10em;text-transform:uppercase;
+      font-weight:600;padding:2px 6px;border-radius:2px;margin-left:6px;
+    }
+    .member-row .badge.pending { background:#fff3d4;color:#8a5e0e; }
+    .member-row .badge.inactive { background:#eceae4;color:#6b7780; }
+    .member-row .badge.active { background:#dff0e4;color:#1f5b3a; }
+    .member-row .actions { display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end; }
+    .member-row .actions button {
+      font-size:10px;padding:5px 9px;letter-spacing:0.04em;
+      border:1px solid var(--line-strong);background:var(--paper);color:var(--ink);
+      cursor:pointer;border-radius:2px;font-family:Inter;font-weight:600;
+    }
+    .member-row .actions button.primary { background:var(--accent);color:var(--paper);border-color:var(--accent); }
+    .member-row .actions button.danger { color:var(--neg);border-color:var(--neg); }
+    .member-row .actions button:hover { opacity:0.85; }
+    .members-section-head {
+      font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
+      color:var(--muted);font-weight:600;margin:14px 0 4px;
+    }
+    .members-empty { font-size:12px;color:var(--muted);padding:8px 0; }
+    .add-member-form { display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px;background:var(--paper-warm);border:1px solid var(--line);margin-bottom:14px; }
+    .add-member-form .full { grid-column:1 / -1; }
+    .add-member-form input { font-family:Inter;font-size:13px;padding:7px 10px;border:1px solid var(--line-strong);border-radius:2px;width:100%;box-sizing:border-box; }
+    .add-member-form button { padding:8px 14px;font-size:12px;font-weight:600;background:var(--accent);color:var(--paper);border:1px solid var(--accent);border-radius:2px;cursor:pointer; }
     .modal .eyebrow {
       font-size:10px;letter-spacing:0.15em;text-transform:uppercase;
       color:var(--accent);font-weight:600;margin-bottom:4px;
@@ -543,6 +579,13 @@
     <h1 style="font-family:'Source Serif 4',serif;font-size:22px;font-weight:600;margin:0 0 12px;">Loading calendar…</h1>
     <p id="boot-detail" style="font-size:13px;line-height:1.5;color:#3a4a52;margin:0;">Connecting to Supabase. If this message stays for more than a few seconds, open the browser console to see what failed.</p>
   </div>
+  <div id="pending-screen" hidden style="max-width:560px;margin:80px auto;padding:36px;background:#fff;font-family:Inter,system-ui,sans-serif;color:#1a2a33;box-shadow:0 8px 32px rgba(0,0,0,0.12);border-radius:2px;">
+    <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#1f6b6b;font-weight:600;margin-bottom:6px;">MGH Robotic Surgery PA Team</div>
+    <h1 style="font-family:'Source Serif 4',serif;font-size:24px;font-weight:600;margin:0 0 12px;letter-spacing:-0.005em;">Awaiting approval</h1>
+    <p style="font-size:14px;line-height:1.55;color:#3a4a52;margin:0 0 18px;">Your account has been created. Mike has been notified and will approve your access shortly. You'll get a notification when you're in.</p>
+    <p style="font-size:13px;line-height:1.55;color:#6b7780;margin:0 0 24px;">No need to keep this page open. You can close it and come back later.</p>
+    <button id="pending-signout" style="padding:10px 16px;background:transparent;color:#1a2a33;border:1px solid rgba(26,42,51,0.28);font-family:Inter;font-size:13px;font-weight:600;letter-spacing:0.02em;border-radius:2px;cursor:pointer;">Sign Out</button>
+  </div>
   <div class="page" id="app" hidden>
     <!-- MASTHEAD -->
     <div class="masthead">
@@ -593,8 +636,13 @@
       <div class="left">
         <span class="pending-count" id="admin-pending-count">0</span>
         <span>pending request(s) — click any chip to decide.</span>
+        <span id="admin-pending-members" hidden style="margin-left:14px;padding-left:14px;border-left:1px solid var(--line);">
+          <strong id="admin-pending-members-count" style="color:var(--warn);">0</strong>
+          <span> new signup(s) awaiting approval</span>
+        </span>
       </div>
-      <div>
+      <div style="display:flex;gap:8px;">
+        <button class="ghost" id="btn-manage-members">Manage Members</button>
         <button class="ghost" id="btn-admin-signout">End Admin Session</button>
       </div>
     </div>
@@ -635,7 +683,7 @@
           </div>
           <div class="legend-item">
             <span class="chip cat-time-away" style="margin:0;"><span class="type-tag">PTO</span><span class="dot" style="--member-color:#1f6b6b"></span><span class="label">Time Away</span></span>
-            <span class="desc">PTO · CME · PD</span>
+            <span class="desc">PTO · CME</span>
           </div>
           <div class="legend-item">
             <span class="chip cat-events" style="margin:0;"><span class="type-tag">NOTE</span><span class="label">Events</span></span>
@@ -940,6 +988,89 @@
     </div>
   </div>
 
+  <!-- MEMBERS MGMT MODAL -->
+  <div class="modal-backdrop" id="members-backdrop" data-modal>
+    <div class="modal x-wide" role="dialog" aria-modal="true" aria-labelledby="members-title">
+      <div class="eyebrow">Admin · Roster</div>
+      <h2 id="members-title">Manage Team Members</h2>
+      <div class="modal-sub">Approve new signups, edit existing members, or add someone directly.</div>
+
+      <details style="margin-bottom:10px;">
+        <summary style="cursor:pointer;font-size:11px;letter-spacing:0.10em;text-transform:uppercase;font-weight:600;color:var(--accent);padding:6px 0;">+ Add Member Directly</summary>
+        <div class="add-member-form">
+          <input id="newm-name" type="text" placeholder="Full name" />
+          <input id="newm-email" type="email" placeholder="Email" />
+          <input id="newm-color" type="text" placeholder="Color hex (e.g. #1f6b6b)" />
+          <input id="newm-password" type="text" placeholder="Starter password (min 8)" />
+          <div class="full" style="display:flex;justify-content:flex-end;gap:8px;align-items:center;">
+            <span id="newm-msg" style="font-size:11px;color:var(--muted);"></span>
+            <button id="btn-newm-create" type="button">Create &amp; Approve</button>
+          </div>
+        </div>
+      </details>
+
+      <div class="members-section-head" id="members-pending-head" hidden>Pending approval</div>
+      <div class="members-list" id="members-pending"></div>
+
+      <div class="members-section-head">Active members</div>
+      <div class="members-list" id="members-active"></div>
+
+      <div class="members-section-head">Inactive</div>
+      <div class="members-list" id="members-inactive"></div>
+
+      <div class="modal-actions" style="margin-top:18px;">
+        <button type="button" class="ghost" id="btn-members-close">Close</button>
+        <button type="button" class="ghost" id="btn-members-refresh">Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT MEMBER MODAL -->
+  <div class="modal-backdrop" id="editmember-backdrop" data-modal>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editmember-title">
+      <div class="eyebrow">Admin · Edit Member</div>
+      <h2 id="editmember-title">Edit Member</h2>
+      <div class="modal-sub">Update name, email, or color. Password reset is separate.</div>
+      <input type="hidden" id="editmember-id" />
+      <div class="field">
+        <label for="editmember-name">Full name</label>
+        <input id="editmember-name" type="text" />
+      </div>
+      <div class="field">
+        <label for="editmember-email">Email</label>
+        <input id="editmember-email" type="email" />
+      </div>
+      <div class="field">
+        <label for="editmember-color">Color hex</label>
+        <input id="editmember-color" type="text" placeholder="#1f6b6b" />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="btn-editmember-cancel">Cancel</button>
+        <button type="button" class="primary" id="btn-editmember-save">Save</button>
+      </div>
+      <div id="editmember-msg" style="font-size:11px;color:var(--neg);margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <!-- RESET PASSWORD MODAL -->
+  <div class="modal-backdrop" id="resetpw-backdrop" data-modal>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="resetpw-title">
+      <div class="eyebrow">Admin · Reset Password</div>
+      <h2 id="resetpw-title">Reset Member Password</h2>
+      <div class="modal-sub">Set a new password and share it with the member out-of-band (Slack, in person).</div>
+      <input type="hidden" id="resetpw-id" />
+      <div class="field">
+        <label for="resetpw-pw">New password (min 8)</label>
+        <input id="resetpw-pw" type="text" />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="btn-resetpw-cancel">Cancel</button>
+        <button type="button" class="primary" id="btn-resetpw-save">Reset</button>
+      </div>
+      <div id="resetpw-msg" style="font-size:11px;color:var(--neg);margin-top:8px;"></div>
+    </div>
+  </div>
+
   <!-- TOAST -->
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -1063,6 +1194,18 @@
           return;
         }
 
+        // Pending approval — admin hasn't reviewed yet OR member was deactivated.
+        if (!state.me.active) {
+          const bootMsg = document.getElementById('boot-msg');
+          if (bootMsg) bootMsg.remove();
+          document.getElementById('pending-screen').hidden = false;
+          document.getElementById('pending-signout').addEventListener('click', async () => {
+            try { await state.supabase.auth.signOut(); } catch {}
+            window.location.replace('/login.html');
+          });
+          return;
+        }
+
         await loadEntries();
         bindStaticHandlers();
         refreshAdminUi();
@@ -1163,6 +1306,22 @@
       document.getElementById('admin-badge').hidden = !isAdmin;
       document.getElementById('btn-add-entry').hidden = !isAdmin;
       document.getElementById('admin-panel').hidden = !isAdmin;
+      if (isAdmin) refreshPendingMembersBadge();
+    }
+
+    async function refreshPendingMembersBadge() {
+      try {
+        const r = await fetch('/api/admin-list-members', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: state.adminToken }),
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        const pending = (j.members || []).filter(m => m.signup_pending && !m.active).length;
+        const badge = document.getElementById('admin-pending-members');
+        const cnt   = document.getElementById('admin-pending-members-count');
+        if (badge && cnt) { cnt.textContent = pending; badge.hidden = pending === 0; }
+      } catch {}
     }
 
     // Bound exactly once at init. All admin-mode toggles re-render via refreshAdminUi().
@@ -1175,6 +1334,14 @@
       document.getElementById('btn-admin').onclick     = openAdminLogin;
       document.getElementById('btn-signout').onclick   = signOut;
       document.getElementById('btn-admin-signout').onclick = endAdminSession;
+      document.getElementById('btn-manage-members').onclick = openMembersModal;
+      document.getElementById('btn-members-close').onclick   = () => closeModal('members-backdrop');
+      document.getElementById('btn-members-refresh').onclick = loadMembersList;
+      document.getElementById('btn-newm-create').onclick     = createMemberDirectly;
+      document.getElementById('btn-editmember-cancel').onclick = () => closeModal('editmember-backdrop');
+      document.getElementById('btn-editmember-save').onclick   = saveEditMember;
+      document.getElementById('btn-resetpw-cancel').onclick    = () => closeModal('resetpw-backdrop');
+      document.getElementById('btn-resetpw-save').onclick      = saveResetPassword;
 
       // Modal close on ESC + backdrop click + close-button.
       document.querySelectorAll('[data-modal]').forEach(b => {
@@ -2204,6 +2371,240 @@
       refreshAdminUi();
       renderAll();
       toast('Admin session expired. Sign in again.', 'error');
+    }
+
+    /* ============================================================
+     * MEMBERS MANAGEMENT (admin)
+     * ============================================================ */
+    async function openMembersModal() {
+      if (!isAdminMode()) { openAdminLogin(); return; }
+      openModal('members-backdrop');
+      await loadMembersList();
+    }
+
+    async function loadMembersList() {
+      const pendBox = document.getElementById('members-pending');
+      const activeBox = document.getElementById('members-active');
+      const inactBox = document.getElementById('members-inactive');
+      pendBox.innerHTML = '<div class="members-empty">Loading…</div>';
+      activeBox.innerHTML = '';
+      inactBox.innerHTML = '';
+      try {
+        const r = await fetch('/api/admin-list-members', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: state.adminToken }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) { adminTokenExpired(); closeModal('members-backdrop'); return; }
+        if (!r.ok) throw new Error(j.error || 'failed');
+
+        const all = j.members || [];
+        const pending  = all.filter(m => m.signup_pending && !m.active);
+        const active   = all.filter(m => m.active);
+        const inactive = all.filter(m => !m.active && !m.signup_pending);
+
+        const pendHead = document.getElementById('members-pending-head');
+        pendHead.hidden = pending.length === 0;
+        pendBox.innerHTML = pending.length
+          ? pending.map(m => memberRowHtml(m, 'pending')).join('')
+          : '<div class="members-empty">No pending signups.</div>';
+        activeBox.innerHTML = active.length
+          ? active.map(m => memberRowHtml(m, 'active')).join('')
+          : '<div class="members-empty">No active members yet.</div>';
+        inactBox.innerHTML = inactive.length
+          ? inactive.map(m => memberRowHtml(m, 'inactive')).join('')
+          : '<div class="members-empty">No inactive members.</div>';
+
+        // Wire row buttons
+        document.querySelectorAll('.member-row [data-act]').forEach(btn => {
+          btn.onclick = () => handleMemberAction(btn.dataset.act, btn.dataset.id, btn);
+        });
+
+        // Update top-of-page admin pending counter.
+        const badge = document.getElementById('admin-pending-members');
+        const cnt   = document.getElementById('admin-pending-members-count');
+        if (badge && cnt) {
+          cnt.textContent = pending.length;
+          badge.hidden = pending.length === 0;
+        }
+      } catch (err) {
+        console.error('loadMembersList', err);
+        pendBox.innerHTML = '<div class="members-empty">Could not load members.</div>';
+      }
+    }
+
+    function memberRowHtml(m, kind) {
+      const badge = kind === 'pending' ? '<span class="badge pending">Pending</span>'
+                  : kind === 'inactive' ? '<span class="badge inactive">Inactive</span>'
+                  : '';
+      const actions = kind === 'pending'
+        ? `<button data-act="approve" data-id="${m.id}" class="primary">Approve</button>
+           <button data-act="deny"    data-id="${m.id}" class="danger">Deny</button>
+           <button data-act="edit"    data-id="${m.id}">Edit</button>`
+        : kind === 'inactive'
+        ? `<button data-act="reactivate" data-id="${m.id}" class="primary">Reactivate</button>
+           <button data-act="edit"       data-id="${m.id}">Edit</button>
+           <button data-act="delete"     data-id="${m.id}" class="danger">Delete</button>`
+        : `<button data-act="edit"          data-id="${m.id}">Edit</button>
+           <button data-act="reset_password" data-id="${m.id}">Reset PW</button>
+           <button data-act="deactivate"    data-id="${m.id}" class="danger">Deactivate</button>`;
+      return `<div class="member-row">
+        <div class="who">
+          <span class="dot" style="background:${escapeHtml(m.color || '#888')}"></span>
+          <div class="meta">
+            <div class="name">${escapeHtml(m.name)}${badge}</div>
+            <div class="email">${escapeHtml(m.email)}</div>
+          </div>
+        </div>
+        <div class="actions">${actions}</div>
+      </div>`;
+    }
+
+    async function handleMemberAction(action, id, btn) {
+      const member = await findMemberById(id);
+      if (action === 'edit') {
+        if (!member) return;
+        document.getElementById('editmember-id').value    = member.id;
+        document.getElementById('editmember-name').value  = member.name || '';
+        document.getElementById('editmember-email').value = member.email || '';
+        document.getElementById('editmember-color').value = member.color || '';
+        document.getElementById('editmember-msg').textContent = '';
+        openModal('editmember-backdrop');
+        return;
+      }
+      if (action === 'reset_password') {
+        document.getElementById('resetpw-id').value = id;
+        document.getElementById('resetpw-pw').value = '';
+        document.getElementById('resetpw-msg').textContent = '';
+        openModal('resetpw-backdrop');
+        return;
+      }
+      if (action === 'deny' || action === 'delete' || action === 'deactivate') {
+        const labels = { deny: 'deny this signup', delete: 'permanently delete', deactivate: 'deactivate' };
+        const ok = confirm(`Are you sure you want to ${labels[action]} ${member?.name || 'this member'}?` +
+                           (action === 'deactivate' ? '' : '\n\nThis cannot be undone.'));
+        if (!ok) return;
+      }
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/admin-member-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: state.adminToken, action, id }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) { adminTokenExpired(); closeModal('members-backdrop'); return; }
+        if (!r.ok) throw new Error(j.error || 'failed');
+        toast(`Member ${action}d.`, 'success');
+        await loadMembersList();
+        await loadMembers(); // refresh roster used by calendar
+        renderAll();
+      } catch (err) {
+        console.error('member action', action, err);
+        toast(`Action failed: ${err.message || 'try again'}`, 'error');
+        btn.disabled = false;
+      }
+    }
+
+    async function findMemberById(id) {
+      // Cheap lookup — re-fetch list isn't worth it; pull from current DOM cache.
+      const r = await fetch('/api/admin-list-members', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: state.adminToken }),
+      });
+      const j = await r.json().catch(() => ({}));
+      return (j.members || []).find(m => m.id === id);
+    }
+
+    async function saveEditMember() {
+      const id    = document.getElementById('editmember-id').value;
+      const name  = document.getElementById('editmember-name').value.trim();
+      const email = document.getElementById('editmember-email').value.trim();
+      const color = document.getElementById('editmember-color').value.trim();
+      const msg   = document.getElementById('editmember-msg');
+      msg.textContent = '';
+      if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) {
+        msg.textContent = 'Color must be 6-digit hex like #1f6b6b';
+        return;
+      }
+      try {
+        const r = await fetch('/api/admin-member-action', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: state.adminToken, action: 'update', id, name, email, color }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) { adminTokenExpired(); return; }
+        if (!r.ok) { msg.textContent = j.error || 'Update failed.'; return; }
+        toast('Member updated.', 'success');
+        closeModal('editmember-backdrop');
+        await loadMembersList();
+        await loadMembers();
+        renderAll();
+      } catch (err) {
+        msg.textContent = err.message || 'Update failed.';
+      }
+    }
+
+    async function saveResetPassword() {
+      const id = document.getElementById('resetpw-id').value;
+      const pw = document.getElementById('resetpw-pw').value;
+      const msg = document.getElementById('resetpw-msg');
+      msg.textContent = '';
+      if (!pw || pw.length < 8) { msg.textContent = 'Password must be at least 8 characters.'; return; }
+      try {
+        const r = await fetch('/api/admin-member-action', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: state.adminToken, action: 'reset_password', id, password: pw }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) { adminTokenExpired(); return; }
+        if (!r.ok) { msg.textContent = j.error || 'Reset failed.'; return; }
+        toast('Password reset. Share it with the member.', 'success');
+        closeModal('resetpw-backdrop');
+      } catch (err) {
+        msg.textContent = err.message || 'Reset failed.';
+      }
+    }
+
+    async function createMemberDirectly() {
+      const name  = document.getElementById('newm-name').value.trim();
+      const email = document.getElementById('newm-email').value.trim();
+      const color = document.getElementById('newm-color').value.trim() || null;
+      const password = document.getElementById('newm-password').value;
+      const msg = document.getElementById('newm-msg');
+      msg.style.color = 'var(--neg)';
+      if (!name || name.length < 2) { msg.textContent = 'Name required.'; return; }
+      if (!email.includes('@')) { msg.textContent = 'Email required.'; return; }
+      if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) { msg.textContent = 'Color must be hex.'; return; }
+      if (!password || password.length < 8) { msg.textContent = 'Password must be 8+ chars.'; return; }
+      msg.style.color = 'var(--muted)';
+      msg.textContent = 'Creating…';
+      try {
+        const r = await fetch('/api/admin-member-action', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: state.adminToken, action: 'create', name, email, color, password }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) { adminTokenExpired(); return; }
+        if (!r.ok) {
+          msg.style.color = 'var(--neg)';
+          msg.textContent = j.error === 'already_exists' ? 'Email already exists.' : (j.error || 'Failed.');
+          return;
+        }
+        msg.style.color = 'var(--pos)';
+        msg.textContent = 'Created. Share password with member.';
+        document.getElementById('newm-name').value = '';
+        document.getElementById('newm-email').value = '';
+        document.getElementById('newm-color').value = '';
+        document.getElementById('newm-password').value = '';
+        await loadMembersList();
+        await loadMembers();
+        renderAll();
+      } catch (err) {
+        msg.style.color = 'var(--neg)';
+        msg.textContent = err.message || 'Failed.';
+      }
     }
 
     /* ============================================================

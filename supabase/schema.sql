@@ -37,6 +37,8 @@ create table if not exists calendar_entries (
 );
 -- Add conference_link column for projects upgrading from v1.
 alter table calendar_entries add column if not exists conference_link text;
+-- Add signup_pending column for projects upgrading from v2.
+alter table team_members add column if not exists signup_pending boolean not null default false;
 create index if not exists calendar_entries_dates_idx  on calendar_entries (start_date, end_date);
 create index if not exists calendar_entries_status_idx on calendar_entries (status);
 create index if not exists calendar_entries_type_idx   on calendar_entries (event_type);

@@ -139,20 +139,22 @@
     <!-- Sign Up -->
     <form id="signup-form" class="hidden" autocomplete="on">
       <div class="login-helper">
-        Your email must already be on the team roster. Mike will have added you in advance.
+        Sign up with your work email. Mike will approve your access — you'll get a notification when you're in.
+      </div>
+      <div class="field">
+        <label for="signup-name">Full Name</label>
+        <input id="signup-name" type="text" required autocomplete="name" placeholder="First Last" />
       </div>
       <div class="field">
         <label for="signup-email">Email</label>
         <input id="signup-email" type="email" required autocomplete="username" />
       </div>
-      <div id="signup-pw-block" class="hidden">
-        <div class="field">
-          <label for="signup-password">Create password</label>
-          <input id="signup-password" type="password" minlength="8" autocomplete="new-password" />
-        </div>
-        <div class="pw-rule">Minimum 8 characters.</div>
+      <div class="field">
+        <label for="signup-password">Create password</label>
+        <input id="signup-password" type="password" minlength="8" autocomplete="new-password" required />
       </div>
-      <button type="submit" id="signup-btn" disabled>Check Email</button>
+      <div class="pw-rule">Minimum 8 characters.</div>
+      <button type="submit" id="signup-btn">Request Access</button>
       <div class="login-msg" id="signup-msg" role="status" aria-live="polite"></div>
     </form>
 
@@ -260,84 +262,42 @@
       }
     });
 
-    // Sign Up: two-step flow.
-    const signupEmail = document.getElementById('signup-email');
-    const signupPwBlock = document.getElementById('signup-pw-block');
+    // Sign Up: name + email + password → request access (admin approves later).
     const signupBtn = document.getElementById('signup-btn');
-    let eligible = false;
-
-    signupEmail.addEventListener('input', () => {
-      eligible = false;
-      signupPwBlock.classList.add('hidden');
-      signupBtn.textContent = 'Check Email';
-      signupBtn.disabled = !signupEmail.value.includes('@');
-      clearMsg(document.getElementById('signup-msg'));
-    });
-
-    signupEmail.addEventListener('blur', async () => {
-      const email = signupEmail.value.trim();
-      if (!email || !email.includes('@')) return;
-      const msg = document.getElementById('signup-msg');
-      setMsg(msg, 'Checking eligibility…', 'info');
-      try {
-        const r = await fetch('/api/check-eligible', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'failed');
-        if (j.eligible) {
-          eligible = true;
-          signupPwBlock.classList.remove('hidden');
-          signupBtn.textContent = 'Create Account';
-          signupBtn.disabled = false;
-          setMsg(msg, 'Email recognized. Choose a password to continue.', 'success');
-        } else {
-          eligible = false;
-          signupPwBlock.classList.add('hidden');
-          signupBtn.textContent = 'Check Email';
-          signupBtn.disabled = false;
-          setMsg(msg, 'That email is not on the team roster yet. Contact Mike to get added.', 'error');
-        }
-      } catch (err) {
-        console.error(err);
-        setMsg(msg, 'Could not check eligibility. Try again.', 'error');
-      }
-    });
-
     signupForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const msg = document.getElementById('signup-msg');
-      const email = signupEmail.value.trim();
+      const name = document.getElementById('signup-name').value.trim();
+      const email = document.getElementById('signup-email').value.trim();
       const password = document.getElementById('signup-password').value;
-      if (!eligible) {
-        signupEmail.dispatchEvent(new Event('blur'));
-        return;
-      }
-      if (!password || password.length < 8) {
-        setMsg(msg, 'Password must be at least 8 characters.', 'error');
-        return;
-      }
+      if (!name || name.length < 2) { setMsg(msg, 'Enter your full name.', 'error'); return; }
+      if (!email.includes('@')) { setMsg(msg, 'Enter a valid email.', 'error'); return; }
+      if (!password || password.length < 8) { setMsg(msg, 'Password must be at least 8 characters.', 'error'); return; }
       signupBtn.disabled = true;
-      setMsg(msg, 'Creating account…', 'info');
+      setMsg(msg, 'Requesting access…', 'info');
       try {
-        const supa = await initSupabase();
-        const { data, error } = await supa.auth.signUp({ email, password });
-        if (error) {
-          setMsg(msg, error.message || 'Could not create account.', 'error');
+        const r = await fetch('/api/signup-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, password }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          if (j.error === 'already_exists') {
+            setMsg(msg, 'An account with that email already exists. Use Sign In, or contact Mike.', 'error');
+          } else if (j.error === 'invalid_password') {
+            setMsg(msg, 'Password must be at least 8 characters.', 'error');
+          } else {
+            setMsg(msg, 'Could not create account. Try again.', 'error');
+          }
           signupBtn.disabled = false;
           return;
         }
-        if (data?.session) {
-          window.location.replace('/index.html');
-          return;
-        }
-        // Fallback: signup succeeded but no session (email confirmation still on).
-        // Try signing in directly with the credentials we just created.
+        // Auto-sign in so we can show the pending screen.
+        const supa = await initSupabase();
         const { error: signInErr } = await supa.auth.signInWithPassword({ email, password });
         if (signInErr) {
-          setMsg(msg, 'Account created, but auto sign-in failed. Try signing in.', 'success');
+          setMsg(msg, 'Account created. Sign in once Mike has approved you.', 'success');
           signupBtn.disabled = false;
           return;
         }
