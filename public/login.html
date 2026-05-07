@@ -323,18 +323,25 @@
       setMsg(msg, 'Creating account…', 'info');
       try {
         const supa = await initSupabase();
-        const { error } = await supa.auth.signUp({
-          email, password,
-          options: {
-            emailRedirectTo: window.location.origin + '/login.html',
-          },
-        });
+        const { data, error } = await supa.auth.signUp({ email, password });
         if (error) {
           setMsg(msg, error.message || 'Could not create account.', 'error');
           signupBtn.disabled = false;
           return;
         }
-        setMsg(msg, 'Account created. Check your email for a confirmation link, then come back here to sign in.', 'success');
+        if (data?.session) {
+          window.location.replace('/index.html');
+          return;
+        }
+        // Fallback: signup succeeded but no session (email confirmation still on).
+        // Try signing in directly with the credentials we just created.
+        const { error: signInErr } = await supa.auth.signInWithPassword({ email, password });
+        if (signInErr) {
+          setMsg(msg, 'Account created, but auto sign-in failed. Try signing in.', 'success');
+          signupBtn.disabled = false;
+          return;
+        }
+        window.location.replace('/index.html');
       } catch (err) {
         console.error(err);
         setMsg(msg, 'Unexpected error. Try again.', 'error');
