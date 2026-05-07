@@ -1053,8 +1053,14 @@
         state.me = state.members.find(m => m.email.toLowerCase() === (meEmail || '').toLowerCase()
                                      || m.auth_user_id === sessionData.session.user.id);
         if (!state.me) {
-          await state.supabase.auth.signOut();
-          window.location.replace('/login.html');
+          try { await state.supabase.auth.signOut(); } catch {}
+          try {
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+              const k = localStorage.key(i);
+              if (k && (k.startsWith('sb-') || k.startsWith('supabase.'))) localStorage.removeItem(k);
+            }
+          } catch {}
+          window.location.replace('/login.html?reason=not_on_roster');
           return;
         }
 
