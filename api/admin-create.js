@@ -1,6 +1,6 @@
 import {
   serviceClient, readJson, send, methodGuard, verifyAdminToken,
-  ALL_TYPES, isYmd, isHttpUrl,
+  ALL_TYPES, TIME_AWAY_TYPES, isYmd, isHttpUrl,
 } from './_lib.js';
 
 // POST { token, entry: { member_id?, event_type, title?, start_date, end_date, notes?, status?, conference_link? } }
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   const title    = (typeof e.title === 'string' && e.title.trim()) ? e.title.trim() : null;
   if (!memberId && !title) return send(res, 400, { error: 'title_or_member_required' });
 
-  const isTimeAway = ['pto', 'cme', 'pd'].includes(e.event_type);
+  const isTimeAway = TIME_AWAY_TYPES.includes(e.event_type);
   const status = isTimeAway && ['pending', 'approved', 'denied'].includes(e.status) ? e.status : 'approved';
 
   const conferenceLink = isHttpUrl(e.conference_link) ? e.conference_link.trim() : null;

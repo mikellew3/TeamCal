@@ -742,7 +742,6 @@
           <select id="req-type" required>
             <option value="pto">PTO — Paid Time Off</option>
             <option value="cme">CME — Continuing Medical Education</option>
-            <option value="pd">PD — Personal Day</option>
           </select>
         </div>
         <div class="field" id="req-conf-field" hidden>
@@ -1015,7 +1014,7 @@
       swp:      { tag:'SWAP',     label:'Swap',        category:'coverage_adds' },
     };
     const CATEGORY_TYPES = {
-      time_away:    ['pto', 'cme', 'pd'],
+      time_away:    ['pto', 'cme'],
       events:       ['note', 'onb', 'shd'],
       coverage_adds:['per_diem', 'swp'],
     };

@@ -2,13 +2,13 @@
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
-export const TIME_AWAY_TYPES = ['pto', 'cme', 'pd'];
+export const TIME_AWAY_TYPES = ['pto', 'cme'];
 export const EVENT_TYPES     = ['note', 'onb', 'shd'];
 export const COVERAGE_TYPES  = ['per_diem', 'swp'];
 export const ALL_TYPES = [...TIME_AWAY_TYPES, ...EVENT_TYPES, ...COVERAGE_TYPES];
 
 export const TYPE_LABEL = {
-  pto: 'PTO', cme: 'CME', pd: 'PD',
+  pto: 'PTO', cme: 'CME',
   note: 'Note', onb: 'Onboarding', shd: 'Shadowing',
   per_diem: 'Per Diem', swp: 'Swap',
 };
