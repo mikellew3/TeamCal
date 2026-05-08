@@ -1734,12 +1734,10 @@
       if (blocked.length > 0) {
         state_ = 'block';
         html = `<div class="icon">✕</div><div><strong>Blocked.</strong> Two or more team members are already off on these days:<ul>${blocked.map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml(b.names.join(', '))}</li>`).join('')}</ul></div>`;
-      } else if (days.length >= 2 && overlap.length > 0) {
-        state_ = 'block';
-        html = `<div class="icon">✕</div><div><strong>Blocked.</strong> Multi-day requests require all days to be clear. Conflict on:<ul>${overlap.map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml(b.names.join(', '))}</li>`).join('')}</ul></div>`;
-      } else if (days.length === 1 && overlap.length > 0) {
+      } else if (overlap.length > 0) {
         state_ = 'watch';
-        html = `<div class="icon">!</div><div><strong>Single-day double-up.</strong> ${overlap[0].count} person${overlap[0].count===1?'':'s'} already off (${escapeHtml(overlap[0].names.join(', '))}). Submission allowed; admin will decide.</div>`;
+        const label = overlap.length === 1 ? 'One day already has someone off' : 'Some days already have someone off';
+        html = `<div class="icon">!</div><div><strong>${label}.</strong> Submission allowed; admin will decide.<ul>${overlap.map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml(b.names.join(', '))}</li>`).join('')}</ul></div>`;
       } else {
         state_ = 'clear';
         html = `<div class="icon">✓</div><div><strong>All clear.</strong> No conflicts on the requested ${days.length === 1 ? 'day' : 'days'}.</div>`;

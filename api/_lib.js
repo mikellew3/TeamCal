@@ -158,15 +158,11 @@ export async function timeAwayConflicts(supabase, requesterId, startDate, endDat
 }
 
 export function classifyConflict(dayCounts) {
-  const nDays = dayCounts.length;
   const blocked = dayCounts.filter(d => d.others_off >= 2);
   if (blocked.length > 0) return { state: 'block', reason: 'two_off', blockedDays: blocked };
   const overlap = dayCounts.filter(d => d.others_off >= 1);
-  if (nDays >= 2 && overlap.length > 0) {
-    return { state: 'block', reason: 'multiday_overlap', blockedDays: overlap };
-  }
-  if (nDays === 1 && overlap.length > 0) {
-    return { state: 'watch', reason: 'single_day_double_up', blockedDays: overlap };
+  if (overlap.length > 0) {
+    return { state: 'watch', reason: 'single_overlap', blockedDays: overlap };
   }
   return { state: 'clear', reason: null, blockedDays: [] };
 }
