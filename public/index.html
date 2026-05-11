@@ -2374,7 +2374,11 @@
               await state.supabase.auth.mfa.unenroll({ factorId: f.id }).catch(() => {});
             }
           }
-          const { data, error } = await state.supabase.auth.mfa.enroll({ factorType: 'totp' });
+          const { data, error } = await state.supabase.auth.mfa.enroll({
+            factorType: 'totp',
+            issuer: 'MGH OR PA Team Cal',
+            friendlyName: 'MGH OR PA Team Cal',
+          });
           if (error) throw error;
           pendingFactor = { id: data.id, secret: data.totp.secret, qr: data.totp.qr_code };
           document.getElementById('security-qr').src = data.totp.qr_code;
