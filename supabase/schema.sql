@@ -39,6 +39,23 @@ create table if not exists calendar_entries (
 alter table calendar_entries add column if not exists conference_link text;
 -- Add signup_pending column for projects upgrading from v2.
 alter table team_members add column if not exists signup_pending boolean not null default false;
+-- Add must_change_password column. Set when admin pre-creates an account with
+-- a temporary password; cleared after the member sets their own.
+alter table team_members add column if not exists must_change_password boolean not null default false;
+
+-- RPC for a signed-in member to clear their own must_change_password flag
+-- after updating their password via supabase.auth.updateUser.
+create or replace function clear_must_change_password()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update team_members
+     set must_change_password = false
+   where auth_user_id = auth.uid();
+$$;
+grant execute on function clear_must_change_password() to authenticated;
 create index if not exists calendar_entries_dates_idx  on calendar_entries (start_date, end_date);
 create index if not exists calendar_entries_status_idx on calendar_entries (status);
 create index if not exists calendar_entries_type_idx   on calendar_entries (event_type);

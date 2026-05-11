@@ -263,9 +263,17 @@
       const { data: factors } = await supa.auth.mfa.listFactors();
       const totp = (factors?.totp || []).find(f => f.status === 'verified');
       if (!totp) return false;
+
+      // Trusted-device grace: skip the prompt if this browser verified MFA
+      // for this user within the last 24 hours.
+      const userId = (await supa.auth.getUser()).data?.user?.id;
+      const graceKey = `mfa_grace_until:${userId || 'anon'}`;
+      const graceUntil = parseInt(localStorage.getItem(graceKey) || '0', 10);
+      if (graceUntil && Date.now() < graceUntil) return false;
+
       const { data: ch, error: chErr } = await supa.auth.mfa.challenge({ factorId: totp.id });
       if (chErr || !ch) return false;
-      mfaContext = { factorId: totp.id, challengeId: ch.id };
+      mfaContext = { factorId: totp.id, challengeId: ch.id, userId, graceKey };
       signinForm.classList.add('hidden');
       signupForm.classList.add('hidden');
       document.querySelector('.login-tabs').style.display = 'none';
@@ -324,6 +332,11 @@
           setMsg(msg, error.message || 'Invalid code. Try again.', 'error');
           btn.disabled = false;
           return;
+        }
+        // Remember this device for 24 hours — skip future MFA prompts until
+        // the grace expires or the user clears local storage.
+        if (mfaContext?.graceKey) {
+          try { localStorage.setItem(mfaContext.graceKey, String(Date.now() + 24 * 60 * 60 * 1000)); } catch {}
         }
         window.location.replace('/index.html');
       } catch (err) {

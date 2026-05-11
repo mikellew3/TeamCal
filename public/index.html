@@ -565,6 +565,23 @@
     <p style="font-size:13px;line-height:1.55;color:#6b7780;margin:0 0 24px;">No need to keep this page open. You can close it and come back later.</p>
     <button id="pending-signout" style="padding:10px 16px;background:transparent;color:#1a2a33;border:1px solid rgba(26,42,51,0.28);font-family:Inter;font-size:13px;font-weight:600;letter-spacing:0.02em;border-radius:2px;cursor:pointer;">Sign Out</button>
   </div>
+  <div id="force-pw-screen" hidden style="max-width:460px;margin:80px auto;padding:36px;background:#fff;font-family:Inter,system-ui,sans-serif;color:#1a2a33;box-shadow:0 8px 32px rgba(0,0,0,0.12);border-radius:2px;">
+    <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#1f6b6b;font-weight:600;margin-bottom:6px;">First Sign-In</div>
+    <h1 style="font-family:'Source Serif 4',serif;font-size:24px;font-weight:600;margin:0 0 12px;letter-spacing:-0.005em;">Set your password</h1>
+    <p style="font-size:13px;line-height:1.55;color:#3a4a52;margin:0 0 18px;">You signed in with a temporary password. Pick your own to continue.</p>
+    <form id="force-pw-form">
+      <div style="margin-bottom:14px;">
+        <label for="force-pw-new" style="display:block;font-size:10px;letter-spacing:0.10em;text-transform:uppercase;color:#6b7780;font-weight:600;margin-bottom:5px;">New password</label>
+        <input id="force-pw-new" type="password" minlength="8" autocomplete="new-password" required style="width:100%;border:1px solid rgba(26,42,51,0.28);padding:8px 11px;font-family:Inter;font-size:13px;border-radius:2px;box-sizing:border-box;" />
+      </div>
+      <div style="margin-bottom:14px;">
+        <label for="force-pw-confirm" style="display:block;font-size:10px;letter-spacing:0.10em;text-transform:uppercase;color:#6b7780;font-weight:600;margin-bottom:5px;">Confirm password</label>
+        <input id="force-pw-confirm" type="password" minlength="8" autocomplete="new-password" required style="width:100%;border:1px solid rgba(26,42,51,0.28);padding:8px 11px;font-family:Inter;font-size:13px;border-radius:2px;box-sizing:border-box;" />
+      </div>
+      <button type="submit" id="force-pw-btn" style="width:100%;padding:11px 14px;background:#1f6b6b;color:#fff;border:1px solid #1f6b6b;font-family:Inter;font-size:13px;font-weight:600;letter-spacing:0.02em;border-radius:2px;cursor:pointer;">Set Password &amp; Continue</button>
+      <div id="force-pw-msg" style="font-size:12px;margin-top:12px;color:#b54545;"></div>
+    </form>
+  </div>
   <div class="page" id="app" hidden>
     <!-- MASTHEAD -->
     <div class="masthead">
@@ -957,15 +974,15 @@
     <div class="modal x-wide" role="dialog" aria-modal="true" aria-labelledby="members-title">
       <div class="eyebrow">Admin · Roster</div>
       <h2 id="members-title">Manage Team Members</h2>
-      <div class="modal-sub">Approve new signups, edit existing members, or add someone directly.</div>
+      <div class="modal-sub">Approve new signups, edit existing members, or add someone directly. Members you add directly will be required to reset their password on first sign-in.</div>
 
       <details style="margin-bottom:10px;">
         <summary style="cursor:pointer;font-size:11px;letter-spacing:0.10em;text-transform:uppercase;font-weight:600;color:var(--accent);padding:6px 0;">+ Add Member Directly</summary>
         <div class="add-member-form">
           <input id="newm-name" type="text" placeholder="Full name" />
           <input id="newm-email" type="email" placeholder="Email" />
-          <input id="newm-color" type="text" placeholder="Color hex (e.g. #1f6b6b)" />
-          <input id="newm-password" type="text" placeholder="Starter password (min 8)" />
+          <input id="newm-color" type="text" placeholder="Color hex (optional — auto-picked if blank)" />
+          <input id="newm-password" type="text" placeholder="Temporary password (min 8 — they'll reset)" />
           <div class="full" style="display:flex;justify-content:flex-end;gap:8px;align-items:center;">
             <span id="newm-msg" style="font-size:11px;color:var(--muted);"></span>
             <button id="btn-newm-create" type="button">Create &amp; Approve</button>
@@ -1205,6 +1222,15 @@
             try { await state.supabase.auth.signOut(); } catch {}
             window.location.replace('/login.html');
           });
+          return;
+        }
+
+        // Force password change on first sign-in for admin-created accounts.
+        if (state.me.must_change_password) {
+          const bootMsg = document.getElementById('boot-msg');
+          if (bootMsg) bootMsg.remove();
+          document.getElementById('force-pw-screen').hidden = false;
+          document.getElementById('force-pw-form').addEventListener('submit', handleForcePasswordChange);
           return;
         }
 
@@ -2267,6 +2293,33 @@
     }
 
     /* ============================================================
+     * FORCE PASSWORD CHANGE (admin-created accounts, first sign-in)
+     * ============================================================ */
+    async function handleForcePasswordChange(ev) {
+      ev.preventDefault();
+      const newPw   = document.getElementById('force-pw-new').value;
+      const confirm = document.getElementById('force-pw-confirm').value;
+      const msg     = document.getElementById('force-pw-msg');
+      const btn     = document.getElementById('force-pw-btn');
+      msg.textContent = '';
+      if (!newPw || newPw.length < 8) { msg.textContent = 'Password must be at least 8 characters.'; return; }
+      if (newPw !== confirm) { msg.textContent = 'Passwords do not match.'; return; }
+      btn.disabled = true;
+      try {
+        const { error: upErr } = await state.supabase.auth.updateUser({ password: newPw });
+        if (upErr) { msg.textContent = upErr.message || 'Could not update password.'; btn.disabled = false; return; }
+        const { error: rpcErr } = await state.supabase.rpc('clear_must_change_password');
+        if (rpcErr) { msg.textContent = 'Password set, but flag clear failed: ' + rpcErr.message; btn.disabled = false; return; }
+        // Reload — easiest way to drop into the full app with fresh state.
+        window.location.reload();
+      } catch (err) {
+        console.error('force-pw', err);
+        msg.textContent = err?.message || 'Unexpected error.';
+        btn.disabled = false;
+      }
+    }
+
+    /* ============================================================
      * SECURITY / MFA
      * ============================================================ */
     let pendingFactor = null; // { id, secret, qr }
@@ -2366,8 +2419,13 @@
         });
         if (error) throw error;
         pendingFactor = null;
+        // Start the 24h grace immediately on this device.
+        try {
+          const uid = state.session?.user?.id || '';
+          if (uid) localStorage.setItem(`mfa_grace_until:${uid}`, String(Date.now() + 24 * 60 * 60 * 1000));
+        } catch {}
         msg.style.color = 'var(--pos)';
-        msg.textContent = '2FA enabled. You\'ll be asked for a code on next sign-in.';
+        msg.textContent = '2FA enabled. You\'ll be asked for a code about once a day from this device.';
         setTimeout(openSecurityModal, 800);
       } catch (err) {
         msg.textContent = err.message || 'Code didn\'t verify. Try again.';
@@ -2604,7 +2662,7 @@
           return;
         }
         msg.style.color = 'var(--pos)';
-        msg.textContent = 'Created. Share password with member.';
+        msg.textContent = 'Created. Share the temporary password — they\'ll be required to reset on first sign-in.';
         document.getElementById('newm-name').value = '';
         document.getElementById('newm-email').value = '';
         document.getElementById('newm-color').value = '';
@@ -2617,6 +2675,7 @@
         msg.textContent = err.message || 'Failed.';
       }
     }
+
 
     /* ============================================================
      * CONFIRM HELPER

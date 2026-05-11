@@ -62,6 +62,7 @@ async function create(supa, body, res) {
     name, email, color,
     active: true,
     signup_pending: false,
+    must_change_password: true,
   }).select('*').single();
   if (tmErr) {
     await supa.auth.admin.deleteUser(created.user.id).catch(() => {});
@@ -141,6 +142,8 @@ async function resetPassword(supa, body, res) {
   if (!row?.auth_user_id) return send(res, 404, { error: 'no_auth_user' });
   const { error } = await supa.auth.admin.updateUserById(row.auth_user_id, { password });
   if (error) throw error;
+  // Force the member to pick their own password on next sign-in.
+  await supa.from('team_members').update({ must_change_password: true }).eq('id', id);
   logAdminAction(supa, { actor: null, action: 'member_reset_password', target_type: 'team_member', target_id: id });
   return send(res, 200, { ok: true });
 }
