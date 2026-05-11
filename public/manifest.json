@@ -1,7 +1,7 @@
 {
-  "name": "MGH PA Team Calendar",
-  "short_name": "PA Calendar",
-  "description": "MGH Robotic Surgery PA Team — schedule, requests, coverage tracking",
+  "name": "MG Surgical Associates Calendar",
+  "short_name": "MGSA Calendar",
+  "description": "MG Surgical Associates — schedule, requests, coverage tracking",
   "start_url": "/index.html",
   "scope": "/",
   "display": "standalone",

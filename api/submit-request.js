@@ -150,7 +150,7 @@ export default async function handler(req, res) {
 
 async function sendAdminEmail({ memberName, typeLabel, days, range, notes }) {
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
-  const RESEND_FROM    = process.env.RESEND_FROM || 'MGH PA Team Calendar <onboarding@resend.dev>';
+  const RESEND_FROM    = process.env.RESEND_FROM || 'MG Surgical Associates Calendar <onboarding@resend.dev>';
   const ADMIN_EMAIL    = process.env.ADMIN_EMAIL;
   if (!RESEND_API_KEY || !ADMIN_EMAIL) return;
 
@@ -162,7 +162,7 @@ async function sendAdminEmail({ memberName, typeLabel, days, range, notes }) {
 <table width="100%" cellspacing="0" cellpadding="0" style="background:#e8e6e1;padding:32px 16px;"><tr><td align="center">
 <table width="560" cellspacing="0" cellpadding="0" style="background:#fff;max-width:560px;border-radius:2px;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
 <tr><td style="padding:28px 32px 24px;">
-<div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:${accent};font-weight:600;margin-bottom:6px;">MGH Robotic Surgery PA Team · New Request</div>
+<div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:${accent};font-weight:600;margin-bottom:6px;">MG Surgical Associates · New Request</div>
 <div style="font-family:${serif};font-size:22px;font-weight:600;color:${ink};letter-spacing:-0.005em;margin:0 0 4px;">${escapeHtml(memberName)} requested ${escapeHtml(typeLabel)}</div>
 <div style="font-size:12px;color:${muted};margin-bottom:18px;">A new time-away request is awaiting your decision.</div>
 <table width="100%" cellspacing="0" cellpadding="0" style="border-top:1.5px solid ${ink};border-bottom:1.5px solid ${ink};margin-bottom:18px;">
@@ -180,7 +180,7 @@ async function sendAdminEmail({ memberName, typeLabel, days, range, notes }) {
 </table>
 <div style="margin-top:20px;padding-top:14px;border-top:1px solid ${line};font-size:11px;color:${muted};letter-spacing:0.04em;">Sign in to the calendar and use the admin panel to approve, deny, or override.</div>
 </td></tr></table>
-<div style="font-size:10px;color:${muted};letter-spacing:0.04em;margin-top:14px;">MGH Robotic Surgery PA Team · Calendar</div>
+<div style="font-size:10px;color:${muted};letter-spacing:0.04em;margin-top:14px;">MG Surgical Associates · Calendar</div>
 </td></tr></table></body></html>`;
 
   await fetch('https://api.resend.com/emails', {

@@ -1,11 +1,11 @@
-// MGH PA Team Calendar — service worker.
+// MG Surgical Associates Calendar — service worker.
 // Strategies:
 //   - HTML / API: network-first, fall back to cache for HTML so the app shell
 //     still loads offline.
 //   - Static assets (icons, manifest, fonts): cache-first.
 // Bump CACHE_VERSION on any breaking change to force a refresh on all clients.
 
-const CACHE_VERSION = 'pa-cal-v11';
+const CACHE_VERSION = 'pa-cal-v12';
 const SHELL = [
   '/index.html',
   '/login.html',

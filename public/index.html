@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Team Calendar · MGH Robotic Surgery PA</title>
+  <title>Team Calendar · MG Surgical Associates</title>
   <meta name="theme-color" content="#1f6b6b" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -31,6 +31,7 @@
       font-family:'Inter',system-ui,sans-serif;color:var(--ink);
       -webkit-font-smoothing:antialiased;
       font-feature-settings:'tnum' 1;
+      overflow-x:hidden;overscroll-behavior-y:none;
     }
     .page {
       max-width:1100px;margin:24px auto;background:var(--paper);
@@ -467,26 +468,91 @@
 
     /* ============ RESPONSIVE ============ */
     @media (max-width:720px) {
-      .page { margin:0;padding:20px 18px;box-shadow:none; }
-      .masthead { flex-direction:column;align-items:flex-start;gap:10px; }
-      .mast-r { width:100%;justify-content:flex-start; }
+      .page {
+        margin:0;box-shadow:none;
+        padding:14px 14px max(20px, env(safe-area-inset-bottom));
+        padding-top:max(14px, env(safe-area-inset-top));
+      }
+      .masthead {
+        flex-direction:column;align-items:flex-start;gap:10px;
+        padding-bottom:8px;margin-bottom:12px;
+      }
+      .masthead h1 { font-size:22px; }
+      .mast-r {
+        width:100%;justify-content:flex-start;gap:6px;
+        display:grid;grid-template-columns:1fr 1fr;
+      }
+      .mast-r button { width:100%; }
+      .mast-r #btn-request { grid-column:1 / -1;font-size:14px;padding:10px 14px; }
+      .mast-r #btn-add-entry { grid-column:1 / -1; }
       .kpis { grid-template-columns:repeat(2,1fr); }
-      .kpi { border-right:1px solid var(--line);border-bottom:1px solid var(--line); }
+      .kpi { border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 10px; }
       .kpi:nth-child(even) { border-right:none; }
       .kpi:nth-last-child(-n+2) { border-bottom:none; }
-      .cal-grid { grid-auto-rows:minmax(78px,1fr); }
-      .chip { font-size:10px;padding:2px 6px 2px 7px; }
-      .legend-grid { grid-template-columns:1fr; }
+      .kpi .val { font-size:24px; }
+      .kpi .val.names { font-size:12px; }
+      .kpi .val.names .count { font-size:24px; }
+      .cal-toolbar { gap:8px; }
+      .cal-toolbar .month-nav .mlabel { min-width:0;font-size:14px; }
+      .cal-grid { grid-auto-rows:minmax(72px,1fr); }
+      .weekdays div { font-size:9px;padding:6px 6px;letter-spacing:0.06em; }
+      .cell { padding:4px 4px 5px; }
+      .cell .num { font-size:10px;margin-bottom:3px; }
+      .cell.today .num { width:18px;height:18px;font-size:10px; }
+      .chip {
+        font-size:10px;padding:2px 5px 2px 6px;
+        min-height:22px;gap:3px;
+        border-left-width:2px;
+      }
+      .chip .type-tag { font-size:8px; }
+      .chip .dot { width:6px;height:6px; }
+      .cell-more { font-size:9px;padding:1px 3px; }
+      .legend-grid { grid-template-columns:1fr;gap:14px; }
       .field-row { grid-template-columns:1fr; }
-      /* iOS forces zoom on inputs <16px, and modal taps need ≥44px */
+      /* iOS forces zoom on inputs <16px */
       .field input, .field select, .field textarea { font-size:16px; }
-      .modal-actions button { min-height:44px; }
-      .day-overview-row { min-height:48px; }
-      .chip { min-height:24px; }
-      .cell .num { min-height:18px; }
-      .cell { padding:6px 6px 6px; }
-      .page { margin:0; box-shadow:none; padding-top:max(20px, env(safe-area-inset-top)); padding-bottom:max(20px, env(safe-area-inset-bottom)); }
+      .modal-backdrop { padding:8px;align-items:flex-end; }
+      .modal {
+        padding:20px 18px 18px;
+        max-height:calc(100vh - 16px);
+        max-width:100%;
+        border-radius:12px 12px 2px 2px;
+      }
+      .modal h2 { font-size:18px; }
+      .modal-actions { gap:8px;padding-top:14px;margin-top:14px; }
+      .modal-actions button { min-height:44px;flex:1;min-width:44%; }
+      .modal-actions .left { margin-right:auto;display:flex;gap:6px;flex-wrap:wrap; }
+      .day-overview-row { min-height:48px;padding:12px 12px; }
+      .member-row { grid-template-columns:1fr;gap:6px; }
+      .member-row .actions { justify-content:flex-start; }
+      .member-row .actions button { min-height:36px;padding:8px 12px;font-size:11px; }
+      .add-member-form { grid-template-columns:1fr;padding:10px; }
+      .section { margin-bottom:14px; }
+      .footer { font-size:9px;justify-content:space-between; }
+      /* Force the calendar to fill the width on mobile (overrides .page padding squeeze) */
+      .calendar { margin-left:-2px;margin-right:-2px; }
     }
+
+    /* Very narrow phones (iPhone SE, etc.) */
+    @media (max-width:380px) {
+      .page { padding-left:10px;padding-right:10px; }
+      .masthead h1 { font-size:20px; }
+      .kpi .val { font-size:21px; }
+      .kpi .val.names .count { font-size:21px; }
+      .cell { padding:3px 3px 4px; }
+      .chip { font-size:9px;padding:2px 4px;gap:2px; }
+      .chip .type-tag { display:none; }
+      .cal-toolbar .month-nav .mlabel { font-size:13px; }
+    }
+
+    /* Tap feedback */
+    @media (hover:none) {
+      .chip:active { background:rgba(31,107,107,0.18); }
+      .cell.admin-can-add:active { background:var(--accent-soft); }
+      .day-overview-row:active { background:var(--paper-warm); }
+      button:active:not(:disabled) { opacity:0.7; }
+    }
+    *, *::before, *::after { -webkit-tap-highlight-color:transparent; }
 
     /* ============ DAY OVERVIEW MODAL ============ */
     .day-overview-list {
@@ -554,12 +620,12 @@
     </div>
   </noscript>
   <div id="boot-msg" style="max-width:560px;margin:80px auto;padding:32px;background:#fff;font-family:Inter,system-ui,sans-serif;color:#1a2a33;box-shadow:0 8px 32px rgba(0,0,0,0.12);border-radius:2px;">
-    <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#1f6b6b;font-weight:600;margin-bottom:6px;">MGH Robotic Surgery PA Team</div>
+    <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#1f6b6b;font-weight:600;margin-bottom:6px;">MG Surgical Associates</div>
     <h1 style="font-family:'Source Serif 4',serif;font-size:22px;font-weight:600;margin:0 0 12px;">Loading calendar…</h1>
     <p id="boot-detail" style="font-size:13px;line-height:1.5;color:#3a4a52;margin:0;">Connecting to Supabase. If this message stays for more than a few seconds, open the browser console to see what failed.</p>
   </div>
   <div id="pending-screen" hidden style="max-width:560px;margin:80px auto;padding:36px;background:#fff;font-family:Inter,system-ui,sans-serif;color:#1a2a33;box-shadow:0 8px 32px rgba(0,0,0,0.12);border-radius:2px;">
-    <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#1f6b6b;font-weight:600;margin-bottom:6px;">MGH Robotic Surgery PA Team</div>
+    <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#1f6b6b;font-weight:600;margin-bottom:6px;">MG Surgical Associates</div>
     <h1 style="font-family:'Source Serif 4',serif;font-size:24px;font-weight:600;margin:0 0 12px;letter-spacing:-0.005em;">Awaiting approval</h1>
     <p style="font-size:14px;line-height:1.55;color:#3a4a52;margin:0 0 18px;">Your account has been created. Mike has been notified and will approve your access shortly. You'll get a notification when you're in.</p>
     <p style="font-size:13px;line-height:1.55;color:#6b7780;margin:0 0 24px;">No need to keep this page open. You can close it and come back later.</p>
@@ -586,7 +652,7 @@
     <!-- MASTHEAD -->
     <div class="masthead">
       <div class="mast-l">
-        <div class="eyebrow">MG Surgical Associates · Robotic Surgery PA Team</div>
+        <div class="eyebrow">MG Surgical Associates</div>
         <h1>Team Calendar</h1>
         <div class="sub">
           <span>Signed in as <strong id="member-name">—</strong><span id="admin-badge" class="admin-pill" hidden>Admin</span></span>
@@ -700,7 +766,7 @@
 
     <!-- FOOTER -->
     <div class="footer">
-      <div>MGH Robotic Surgery PA Team · Calendar</div>
+      <div>MG Surgical Associates · Calendar</div>
       <div id="sync-status">—</div>
     </div>
   </div>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Sign In · MGH PA Team Calendar</title>
+  <title>Sign In · MG Surgical Associates</title>
   <meta name="theme-color" content="#1f6b6b" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -109,11 +109,24 @@
       font-size:11px;color:var(--muted);margin-top:-4px;margin-bottom:10px;line-height:1.45;
     }
     .pw-rule { font-size:10px;color:var(--muted);margin-top:-8px;margin-bottom:8px;letter-spacing:0.02em; }
+
+    @media (max-width:480px) {
+      body.login-page {
+        padding:24px 14px max(24px, env(safe-area-inset-bottom));
+        align-items:flex-start;
+      }
+      .login-card { padding:28px 22px 24px;border-radius:6px; }
+      .login-card h1 { font-size:21px; }
+      .field input { font-size:16px;padding:10px 12px; }
+      .login-card button[type=submit] { padding:13px 14px;font-size:14px;min-height:48px; }
+      .login-tabs .tab { font-size:12px;padding:12px 0;min-height:44px; }
+    }
+    *, *::before, *::after { -webkit-tap-highlight-color:transparent; }
   </style>
 </head>
 <body class="login-page">
   <div class="login-card" role="main">
-    <div class="eyebrow">MG Surgical Associates · Robotic Surgery PA Team</div>
+    <div class="eyebrow">MG Surgical Associates</div>
     <h1>Team Calendar</h1>
     <div class="login-sub">Sign in to view the calendar and request time away.</div>
 
@@ -169,7 +182,7 @@
       <div class="login-msg" id="signup-msg" role="status" aria-live="polite"></div>
     </form>
 
-    <div class="login-footer">MGH Robotic Surgery PA Team · Calendar</div>
+    <div class="login-footer">MG Surgical Associates · Team Calendar</div>
   </div>
 
   <script>

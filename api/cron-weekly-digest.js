@@ -219,11 +219,11 @@ function renderMemberDigest({ member, entries, monday, sunday, rangeLabel, appUr
   const cta = appUrl ? ctaHtml(appUrl) : '';
 
   return wrapHtml({
-    eyebrow: 'MGH PA Team Calendar — Weekly Digest',
+    eyebrow: 'MG Surgical Associates — Weekly Digest',
     h1: `Your week ahead`,
     sub: rangeLabel,
     body: intro + blocks + cta,
-    footer: 'MGH Robotic Surgery PA Team · Calendar<br/>Reply to this email to reach the program lead',
+    footer: 'MG Surgical Associates · Team Calendar<br/>Reply to this email to reach the program lead',
   });
 }
 
@@ -274,11 +274,11 @@ function renderAdminDigest({ entries, monday, sunday, rangeLabel, appUrl }) {
 
   const cta = appUrl ? ctaHtml(appUrl) : '';
   return wrapHtml({
-    eyebrow: 'MGH PA Team Calendar — Admin Summary',
+    eyebrow: 'MG Surgical Associates — Admin Summary',
     h1: 'Team week ahead',
     sub: rangeLabel,
     body: headsUpHtml + dayHeader + blocks + cta,
-    footer: 'MGH Robotic Surgery PA Team · Admin Digest<br/>Auto-sent every Sunday 8 PM ET',
+    footer: 'MG Surgical Associates · Admin Digest<br/>Auto-sent every Sunday 8 PM ET',
   });
 }
 
