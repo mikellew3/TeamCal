@@ -7,13 +7,13 @@ export const EVENT_TYPES     = ['note', 'onb', 'shd'];
 // 'cov' is the new generic coverage type. 'per_diem' and 'swp' remain in the
 // list so legacy rows still load and validate; the UI only offers 'cov' going
 // forward.
-export const COVERAGE_TYPES  = ['cov', 'per_diem', 'swp'];
+export const COVERAGE_TYPES  = ['per_diem', 'ot', 'swp', 'cov'];
 export const ALL_TYPES = [...TIME_AWAY_TYPES, ...EVENT_TYPES, ...COVERAGE_TYPES];
 
 export const TYPE_LABEL = {
   pto: 'PTO', cme: 'CME',
   note: 'Note', onb: 'Onboarding', shd: 'Shadowing',
-  cov: 'Coverage', per_diem: 'Per Diem', swp: 'Swap',
+  per_diem: 'Per Diem', ot: 'OT', swp: 'Swap', cov: 'General',
 };
 
 export function categoryFor(et) {

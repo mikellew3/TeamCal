@@ -669,8 +669,8 @@
             <span class="desc">Notes (shown as title) · Onboarding · Shadowing</span>
           </div>
           <div class="legend-item">
-            <span class="chip cat-coverage" style="margin:0;"><span class="label">Allie @ MGH</span></span>
-            <span class="desc">Coverage (shown as title)</span>
+            <span class="chip cat-coverage" style="margin:0;"><span class="type-tag">PER DIEM</span><span class="label">Allie @ MGH</span></span>
+            <span class="desc">Per Diem · OT · Swap · General (no tag)</span>
           </div>
         </div>
         <div class="legend-block">
@@ -1160,14 +1160,15 @@
       note:     { tag:'',         label:'Note',        category:'events' },
       onb:      { tag:'ONB',      label:'Onboarding',  category:'events' },
       shd:      { tag:'SHD',      label:'Shadowing',   category:'events' },
-      cov:      { tag:'',         label:'Coverage',    category:'coverage_adds' },
-      per_diem: { tag:'',         label:'Per Diem',    category:'coverage_adds' },
-      swp:      { tag:'',         label:'Swap',        category:'coverage_adds' },
+      per_diem: { tag:'PER DIEM', label:'Per Diem',    category:'coverage_adds' },
+      ot:       { tag:'OT',       label:'OT',          category:'coverage_adds' },
+      swp:      { tag:'SWAP',     label:'Swap',        category:'coverage_adds' },
+      cov:      { tag:'',         label:'General',     category:'coverage_adds' },
     };
     const CATEGORY_TYPES = {
       time_away:    ['pto', 'cme'],
       events:       ['note', 'onb', 'shd'],
-      coverage_adds:['cov'],
+      coverage_adds:['per_diem', 'ot', 'swp', 'cov'],
     };
     const TIME_AWAY_TYPES = CATEGORY_TYPES.time_away;
     const STATUS_LABEL = { approved:'Approved', pending:'Pending', denied:'Denied' };
