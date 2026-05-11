@@ -26,6 +26,25 @@ export default async function handler(req, res) {
   if (userErr || !userData?.user) return send(res, 401, { error: 'invalid_token' });
   const user = userData.user;
 
+  // 2FA is mandatory for submitting requests. Verify the user has at least one
+  // verified TOTP factor. We look at the user record first (cheap) and fall
+  // back to the admin API if the field isn't populated by the gotrue version.
+  let hasVerifiedMfa = (user.factors || []).some(f => f.status === 'verified');
+  if (!hasVerifiedMfa) {
+    try {
+      const { data: adminUser } = await supa.auth.admin.getUserById(user.id);
+      hasVerifiedMfa = (adminUser?.user?.factors || []).some(f => f.status === 'verified');
+    } catch (e) {
+      console.error('mfa lookup', e);
+    }
+  }
+  if (!hasVerifiedMfa) {
+    return send(res, 403, {
+      error: 'mfa_required',
+      detail: 'Two-factor authentication must be enabled before submitting requests.',
+    });
+  }
+
   let { data: member, error: mErr } = await supa
     .from('team_members')
     .select('id, name, email, active')

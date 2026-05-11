@@ -602,13 +602,6 @@
       </div>
     </div>
 
-    <!-- 2FA NAG (shown until user enables MFA) -->
-    <div id="mfa-nag" hidden style="margin:10px 0 14px;padding:12px 14px;border:1px solid #d9b876;background:#fff8e6;border-radius:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-      <strong style="color:#7a5a18;">Two-factor authentication is required.</strong>
-      <span style="color:#6a5a3a;flex:1;min-width:200px;">Set up 2FA in Security before you can submit time-off or coverage requests.</span>
-      <button type="button" class="primary" id="btn-mfa-nag-open">Set up 2FA</button>
-    </div>
-
     <!-- KPI STRIP -->
     <div class="kpis" id="kpis">
       <div class="kpi"><div class="lbl">My Days Off This Month</div><div class="val" id="kpi-month">0</div><div class="sub">Your approved time away · current month</div></div>
@@ -1371,10 +1364,6 @@
       document.getElementById('admin-badge').hidden = !isAdmin;
       document.getElementById('btn-add-entry').hidden = !isAdmin;
       document.getElementById('admin-panel').hidden = !isAdmin;
-      const nag = document.getElementById('mfa-nag');
-      if (nag) nag.hidden = !!state.mfaEnabled;
-      const reqBtn = document.getElementById('btn-request');
-      if (reqBtn) reqBtn.title = state.mfaEnabled ? '' : 'Enable 2FA in Security first';
       if (isAdmin) refreshPendingMembersBadge();
     }
 
@@ -1404,8 +1393,6 @@
       document.getElementById('btn-signout').onclick   = signOut;
       document.getElementById('btn-admin-signout').onclick = endAdminSession;
       document.getElementById('btn-security').onclick           = openSecurityModal;
-      const mfaNagBtn = document.getElementById('btn-mfa-nag-open');
-      if (mfaNagBtn) mfaNagBtn.onclick = openSecurityModal;
       document.getElementById('btn-security-close').onclick     = () => closeModal('security-backdrop');
       document.getElementById('btn-security-cancel-enroll').onclick = cancelEnroll;
       document.getElementById('btn-security-verify').onclick    = verifyEnroll;
@@ -1905,6 +1892,13 @@
           toast('A note is required for this request.', 'error');
           document.getElementById('req-notes').focus();
           btn.disabled = false;
+          return;
+        }
+        if (r.status === 403 && j.error === 'mfa_required') {
+          state.mfaEnabled = false;
+          toast('Enable two-factor authentication before submitting requests.', 'error');
+          closeModal('request-backdrop');
+          openSecurityModal();
           return;
         }
         if (!r.ok) throw new Error(j.error || 'failed');
