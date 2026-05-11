@@ -639,7 +639,7 @@
   <div id="boot-msg" style="max-width:560px;margin:80px auto;padding:32px;background:#fff;font-family:Inter,system-ui,sans-serif;color:#1a2a33;box-shadow:0 8px 32px rgba(0,0,0,0.12);border-radius:2px;">
     <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#1f6b6b;font-weight:600;margin-bottom:6px;">MG Surgical Associates</div>
     <h1 style="font-family:'Source Serif 4',serif;font-size:22px;font-weight:600;margin:0 0 12px;">Loading calendar…</h1>
-    <p id="boot-detail" style="font-size:13px;line-height:1.5;color:#3a4a52;margin:0;">Connecting to Supabase. If this message stays for more than a few seconds, open the browser console to see what failed.</p>
+    <p id="boot-detail" style="font-size:13px;line-height:1.5;color:#3a4a52;margin:0;">Still loading? Try refreshing the page. If it keeps happening, message Admin.</p>
   </div>
   <div id="pending-screen" hidden style="max-width:560px;margin:80px auto;padding:36px;background:#fff;font-family:Inter,system-ui,sans-serif;color:#1a2a33;box-shadow:0 8px 32px rgba(0,0,0,0.12);border-radius:2px;">
     <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#1f6b6b;font-weight:600;margin-bottom:6px;">MG Surgical Associates</div>
@@ -1220,7 +1220,8 @@
       var detail = document.getElementById('boot-detail');
       if (detail && !window.__bootFinished) {
         detail.style.color = '#b54545';
-        detail.textContent = 'Script error: ' + (e?.message || e?.error?.message || 'unknown') + ' — open the browser console (F12) for details.';
+        detail.textContent = "Something went wrong loading the calendar. Try refreshing. If it keeps happening, message Admin.";
+        console.error('boot error', e?.message || e?.error?.message || e);
       }
     });
     setTimeout(function () {
@@ -1228,11 +1229,8 @@
       var detail = document.getElementById('boot-detail');
       if (!detail) return;
       detail.style.color = '#b54545';
-      if (!window.__bootStarted) {
-        detail.textContent = 'The page script never started. /vendor/supabase.js may have failed to load. Check the browser console (F12) for the exact error.';
-      } else {
-        detail.textContent = 'Loading is taking longer than expected. Check the browser console (F12) for errors.';
-      }
+      detail.textContent = "Still loading? Try refreshing the page. If it keeps happening, message Admin.";
+      console.warn(window.__bootStarted ? 'boot: page script started but did not finish in 8s' : 'boot: page script never started');
     }, 8000);
   </script>
 
@@ -1306,7 +1304,7 @@
         try { env = await r.json(); }
         catch { showFatal('Got a non-JSON response from /api/env.'); return; }
         if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
-          showFatal('Supabase env not set on the server. Configure SUPABASE_URL and SUPABASE_ANON_KEY in Vercel → Project Settings → Environment Variables, then redeploy.');
+          showFatal("Calendar isn't available right now. Try refreshing in a few minutes. If it keeps happening, message Admin.");
           return;
         }
         state.supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
@@ -1409,7 +1407,7 @@
         });
       } catch (e) {
         console.error('init', e);
-        showFatal('Could not load the calendar. ' + (e?.message || 'Unknown error') + ' — see browser console for details.');
+        showFatal("Couldn't load the calendar. Try refreshing. If it keeps happening, message Admin.");
       }
     })();
 

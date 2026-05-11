@@ -189,12 +189,20 @@
     window.__bootStarted = false;
     window.addEventListener('error', function (e) {
       var m = document.getElementById('signin-msg');
-      if (m) { m.className = 'login-msg error'; m.textContent = 'Script error: ' + (e?.message || 'unknown') + ' — see console.'; }
+      if (m) {
+        m.className = 'login-msg error';
+        m.textContent = "Something went wrong loading the sign-in page. Try refreshing. If it keeps happening, message Admin.";
+        console.error('login boot error', e?.message || e);
+      }
     });
     setTimeout(function () {
       if (window.__bootStarted) return;
       var m = document.getElementById('signin-msg');
-      if (m && !m.textContent) { m.className = 'login-msg error'; m.textContent = 'Page script did not start — likely the Supabase CDN was blocked. Check console (F12).'; }
+      if (m && !m.textContent) {
+        m.className = 'login-msg error';
+        m.textContent = "Still loading? Try refreshing. If it keeps happening, message Admin.";
+        console.warn('login: page script did not start within 6s');
+      }
     }, 6000);
   </script>
 
@@ -206,7 +214,8 @@
       ({ createClient } = window.supabase);
     } else {
       var m = document.getElementById('signin-msg');
-      if (m) { m.className = 'login-msg error'; m.textContent = 'Could not load Supabase library — check /vendor/supabase.js deployed.'; }
+      if (m) { m.className = 'login-msg error'; m.textContent = "Sign-in isn't available right now. Try refreshing. If it keeps happening, message Admin."; }
+      console.error('login: supabase global missing');
       throw new Error('supabase global missing');
     }
 
@@ -259,7 +268,7 @@
       } catch (e) {
         console.error('login init', e);
         const m = document.getElementById('signin-msg');
-        setMsg(m, 'Configuration error: ' + (e?.message || 'backend not reachable.'), 'error');
+        setMsg(m, "Sign-in isn't available right now. Try refreshing. If it keeps happening, message Admin.", 'error');
       }
     })();
 
