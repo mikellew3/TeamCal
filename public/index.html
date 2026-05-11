@@ -770,9 +770,6 @@
           <div class="legend-item">
             <span class="chip cat-time-away pending" style="margin:0;"><span class="type-tag">PTO</span><span class="label">Pending</span></span>
           </div>
-          <div class="legend-item">
-            <span class="chip cat-time-away denied" style="margin:0;"><span class="type-tag">PTO</span><span class="label">Denied</span></span>
-          </div>
         </div>
         <div class="legend-block">
           <div class="section-head" style="border-bottom-color:var(--line);">
@@ -3269,11 +3266,15 @@
       if (end < start) return 0;
       return expandRange(start, end).length;
     }
-    // Visibility rule: pending and denied are hidden from members who are
-    // neither the owner nor admin. Admin sees everything. Owners see their own.
-    // Conflict checks still use raw state.entries so people can't double-book
-    // around someone else's pending request silently.
+    // Visibility rule for the calendar grid:
+    //   - Denied entries are never rendered (kept in DB for audit, but they
+    //     clutter the grid with strikethroughs that aren't useful day-to-day).
+    //   - Approved is visible to everyone.
+    //   - Pending is visible only to the owner and admin.
+    // Conflict checks still use raw state.entries so members can't silently
+    // double-book around someone else's pending request.
     function visibleToMe(e) {
+      if (e.status === 'denied') return false;
       if (e.status === 'approved') return true;
       if (isAdminMode()) return true;
       if (state.me && e.member_id === state.me.id) return true;
