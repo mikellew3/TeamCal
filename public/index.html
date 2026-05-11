@@ -1146,7 +1146,7 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="security-title">
       <div class="eyebrow">Account Security</div>
       <h2 id="security-title">Two-Factor Authentication</h2>
-      <div class="modal-sub">Use an authenticator app (Google Authenticator, Authy, 1Password, etc.) for a second layer of protection.</div>
+      <div class="modal-sub">Use the <strong>Google Authenticator</strong> app for a second layer of protection. Install it from the App Store / Play Store, then scan the QR code below.</div>
 
       <div id="security-status" style="font-size:13px;color:var(--ink-2);margin-bottom:14px;">Checking…</div>
 
@@ -2194,21 +2194,48 @@
       try {
         const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
         state.swRegistration = reg;
-        // If a new SW is waiting, ask it to activate.
-        if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
-        reg.addEventListener('updatefound', () => {
-          const sw = reg.installing;
+
+        // Reload once when the new SW takes control so the page is on
+        // the latest HTML/JS without the user having to think about it.
+        let reloadingForUpdate = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (reloadingForUpdate) return;
+          reloadingForUpdate = true;
+          window.location.reload();
+        });
+
+        const handleNewWorker = (sw) => {
           if (!sw) return;
           sw.addEventListener('statechange', () => {
             if (sw.state === 'installed' && navigator.serviceWorker.controller) {
-              // New SW available — activate next page-load.
-              sw.postMessage('SKIP_WAITING');
+              showUpdateToast(() => sw.postMessage('SKIP_WAITING'));
             }
           });
-        });
+        };
+        if (reg.waiting) handleNewWorker(reg.waiting);
+        reg.addEventListener('updatefound', () => handleNewWorker(reg.installing));
+
+        // Check for updates every 30 min while the app is open, plus on
+        // every tab focus — keeps the home-screen icon close to live.
+        setInterval(() => { reg.update().catch(() => {}); }, 30 * 60 * 1000);
+        window.addEventListener('focus', () => { reg.update().catch(() => {}); });
       } catch (e) {
         console.error('SW register failed', e);
       }
+    }
+
+    function showUpdateToast(onAccept) {
+      // Dismiss any existing update toast first.
+      document.getElementById('update-toast')?.remove();
+      const el = document.createElement('div');
+      el.id = 'update-toast';
+      el.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:1000;background:var(--ink);color:var(--paper);padding:12px 16px;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,0.22);font-size:13px;display:flex;gap:12px;align-items:center;max-width:90vw;';
+      el.innerHTML = '<span>New version available.</span><button type="button" style="background:var(--accent);color:var(--paper);border:1px solid var(--accent);padding:6px 12px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;">Refresh</button>';
+      el.querySelector('button').onclick = () => { el.remove(); onAccept(); };
+      document.body.appendChild(el);
+      // Auto-refresh after 30s if the user doesn't act — keeps PWAs that
+      // sit open in the background up to date.
+      setTimeout(() => { if (document.getElementById('update-toast')) { el.remove(); onAccept(); } }, 30000);
     }
 
     /* ============================================================
