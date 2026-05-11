@@ -665,12 +665,12 @@
             <span class="desc">PTO · CME</span>
           </div>
           <div class="legend-item">
-            <span class="chip cat-events" style="margin:0;"><span class="type-tag">NOTE</span><span class="label">Events</span></span>
-            <span class="desc">Notes · Onboarding · Shadowing</span>
+            <span class="chip cat-events" style="margin:0;"><span class="label">Department meeting</span></span>
+            <span class="desc">Notes (shown as title) · Onboarding · Shadowing</span>
           </div>
           <div class="legend-item">
-            <span class="chip cat-coverage" style="margin:0;"><span class="type-tag">PER DIEM</span><span class="dot" style="--member-color:#3a4a7a"></span><span class="label">Coverage</span></span>
-            <span class="desc">Per Diem · Swap</span>
+            <span class="chip cat-coverage" style="margin:0;"><span class="label">Allie @ MGH</span></span>
+            <span class="desc">Coverage (shown as title)</span>
           </div>
         </div>
         <div class="legend-block">
@@ -1157,16 +1157,17 @@
       pto:      { tag:'PTO',      label:'PTO',         category:'time_away' },
       cme:      { tag:'CME',      label:'CME',         category:'time_away' },
       pd:       { tag:'PD',       label:'PD',          category:'time_away' },
-      note:     { tag:'NOTE',     label:'Note',        category:'events' },
+      note:     { tag:'',         label:'Note',        category:'events' },
       onb:      { tag:'ONB',      label:'Onboarding',  category:'events' },
       shd:      { tag:'SHD',      label:'Shadowing',   category:'events' },
-      per_diem: { tag:'PER DIEM', label:'Per Diem',    category:'coverage_adds' },
-      swp:      { tag:'SWAP',     label:'Swap',        category:'coverage_adds' },
+      cov:      { tag:'',         label:'Coverage',    category:'coverage_adds' },
+      per_diem: { tag:'',         label:'Per Diem',    category:'coverage_adds' },
+      swp:      { tag:'',         label:'Swap',        category:'coverage_adds' },
     };
     const CATEGORY_TYPES = {
       time_away:    ['pto', 'cme'],
       events:       ['note', 'onb', 'shd'],
-      coverage_adds:['per_diem', 'swp'],
+      coverage_adds:['cov'],
     };
     const TIME_AWAY_TYPES = CATEGORY_TYPES.time_away;
     const STATUS_LABEL = { approved:'Approved', pending:'Pending', denied:'Denied' };
@@ -1666,7 +1667,7 @@
       const color = member?.color || 'transparent';
 
       chip.innerHTML = `
-        <span class="type-tag">${meta.tag}</span>
+        ${meta.tag ? `<span class="type-tag">${meta.tag}</span>` : ''}
         ${member ? `<span class="dot" style="--member-color:${color}"></span>` : ''}
         <span class="label">${escapeHtml(name)}</span>
       `;

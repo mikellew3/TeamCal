@@ -21,7 +21,7 @@ create table if not exists calendar_entries (
   id               uuid primary key default gen_random_uuid(),
   member_id        uuid references team_members(id) on delete cascade,
   event_type       text not null
-    check (event_type in ('pto', 'cme', 'pd', 'note', 'onb', 'shd', 'per_diem', 'swp')),
+    check (event_type in ('pto', 'cme', 'pd', 'note', 'onb', 'shd', 'per_diem', 'swp', 'cov')),
   title            text,
   start_date       date not null,
   end_date         date not null,
@@ -97,9 +97,9 @@ create index if not exists admin_actions_action_idx  on admin_actions (action);
 
 create or replace function entry_category(et text) returns text as $$
   select case
-    when et in ('pto', 'cme', 'pd')   then 'time_away'
-    when et in ('note', 'onb', 'shd') then 'events'
-    when et in ('per_diem', 'swp')    then 'coverage_adds'
+    when et in ('pto', 'cme', 'pd')         then 'time_away'
+    when et in ('note', 'onb', 'shd')       then 'events'
+    when et in ('cov', 'per_diem', 'swp')   then 'coverage_adds'
     else 'unknown'
   end;
 $$ language sql immutable;
