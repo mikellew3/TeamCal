@@ -1241,6 +1241,29 @@
 
         await loadEntries();
         bindStaticHandlers();
+
+        // Auto-elevate to admin if this user is the configured ADMIN_EMAIL.
+        // Skipped silently when we already have a token in sessionStorage.
+        if (!state.adminToken) {
+          try {
+            const r = await fetch('/api/admin-verify', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.session.access_token}`,
+              },
+              body: '{}',
+            });
+            if (r.ok) {
+              const j = await r.json().catch(() => ({}));
+              if (j.token) {
+                state.adminToken = j.token;
+                sessionStorage.setItem('admin_token', j.token);
+              }
+            }
+          } catch {}
+        }
+
         refreshAdminUi();
         renderAll();
         const bootMsg = document.getElementById('boot-msg');
