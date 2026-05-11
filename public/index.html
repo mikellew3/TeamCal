@@ -1664,7 +1664,9 @@
       if (entry.member_id === state.me?.id) chip.classList.add('mine');
 
       const member = entry.member_id ? state.members.find(m => m.id === entry.member_id) : null;
-      const name = member ? member.name.split(' ')[0] : (entry.title || 'Team');
+      // Title wins when present (Events and Coverage Adds rely on this).
+      // Otherwise fall back to the member's first name (Time Away typically).
+      const name = entry.title ? entry.title : (member ? member.name.split(' ')[0] : 'Team');
       const color = member?.color || 'transparent';
 
       chip.innerHTML = `
