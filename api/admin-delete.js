@@ -1,6 +1,6 @@
 import {
   serviceClient, readJson, send, methodGuard, verifyAdminToken,
-  TYPE_LABEL, TIME_AWAY_TYPES, formatRange,
+  TYPE_LABEL, TIME_AWAY_TYPES, formatRange, logAdminAction,
 } from './_lib.js';
 import { sendPush } from './_push.js';
 
@@ -24,6 +24,12 @@ export default async function handler(req, res) {
 
     const { error } = await supa.from('calendar_entries').delete().eq('id', id);
     if (error) throw error;
+
+    logAdminAction(supa, {
+      actor: null, action: 'entry_delete',
+      target_type: 'calendar_entry', target_id: id,
+      payload: existing ? { member_id: existing.member_id, event_type: existing.event_type } : null,
+    });
 
     if (existing?.member_id && TIME_AWAY_TYPES.includes(existing.event_type)) {
       const typeLabel = TYPE_LABEL[existing.event_type] || existing.event_type;

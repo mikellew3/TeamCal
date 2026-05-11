@@ -1,6 +1,6 @@
 import {
   serviceClient, readJson, send, methodGuard, verifyAdminToken,
-  ALL_TYPES, TIME_AWAY_TYPES, isYmd, isHttpUrl,
+  ALL_TYPES, TIME_AWAY_TYPES, isYmd, isHttpUrl, logAdminAction,
 } from './_lib.js';
 
 // POST { token, entry: { member_id?, event_type, title?, start_date, end_date, notes?, status?, conference_link? } }
@@ -45,6 +45,11 @@ export default async function handler(req, res) {
       .select('*')
       .single();
     if (error) throw error;
+    logAdminAction(supa, {
+      actor: null, action: 'entry_create',
+      target_type: 'calendar_entry', target_id: data.id,
+      payload: { event_type: data.event_type, member_id: data.member_id, start_date: data.start_date, end_date: data.end_date, status: data.status },
+    });
     return send(res, 200, { entry: data });
   } catch (err) {
     console.error('admin-create', err);

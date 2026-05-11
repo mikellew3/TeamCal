@@ -1,11 +1,5 @@
-import { serviceClient, readJson, send, methodGuard } from './_lib.js';
+import { serviceClient, readJson, send, methodGuard, nextAvailableColor } from './_lib.js';
 import { sendPush } from './_push.js';
-
-const PALETTE = [
-  '#1f6b6b','#7a4e2d','#2d5f3f','#8b2c3d','#4a4a7a','#a85a1f',
-  '#3a4a7a','#6b3a6e','#5e7a2d','#a8492e','#2d4f7a','#7a5a2d',
-  '#4a6e5e','#6e2d4a','#3a5a6e','#8b6e2d',
-];
 
 // POST { name, email, password } → creates auth user (email-confirmed) + a
 // pending team_members row. Notifies admin. Returns { session } so the
@@ -47,7 +41,7 @@ export default async function handler(req, res) {
     }
 
     const authUserId = created.user.id;
-    const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+    const color = await nextAvailableColor(supa, name);
 
     // Create the team_members row in pending state.
     const { error: tmErr } = await supa.from('team_members').insert({

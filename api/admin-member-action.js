@@ -1,10 +1,4 @@
-import { serviceClient, readJson, send, methodGuard, verifyAdminToken } from './_lib.js';
-
-const PALETTE = [
-  '#1f6b6b','#7a4e2d','#2d5f3f','#8b2c3d','#4a4a7a','#a85a1f',
-  '#3a4a7a','#6b3a6e','#5e7a2d','#a8492e','#2d4f7a','#7a5a2d',
-  '#4a6e5e','#6e2d4a','#3a5a6e','#8b6e2d',
-];
+import { serviceClient, readJson, send, methodGuard, verifyAdminToken, nextAvailableColor, logAdminAction } from './_lib.js';
 
 // POST { token, action, ...args } — single endpoint for all member-mgmt:
 //   action: 'create'      args: { name, email, color, password }
@@ -45,7 +39,7 @@ export default async function handler(req, res) {
 async function create(supa, body, res) {
   const name = (body?.name || '').trim();
   const email = (body?.email || '').trim().toLowerCase();
-  const color = body?.color || PALETTE[Math.floor(Math.random() * PALETTE.length)];
+  const color = body?.color || await nextAvailableColor(supa, name);
   const password = body?.password || '';
   if (!name || name.length < 2) return send(res, 400, { error: 'invalid_name' });
   if (!email.includes('@')) return send(res, 400, { error: 'invalid_email' });
@@ -73,6 +67,7 @@ async function create(supa, body, res) {
     await supa.auth.admin.deleteUser(created.user.id).catch(() => {});
     throw tmErr;
   }
+  logAdminAction(supa, { actor: null, action: 'member_create', target_type: 'team_member', target_id: row.id, payload: { email: row.email, name: row.name } });
   return send(res, 200, { member: row });
 }
 
@@ -83,6 +78,7 @@ async function approve(supa, body, res) {
     .update({ active: true, signup_pending: false })
     .eq('id', id).select('*').single();
   if (error) throw error;
+  logAdminAction(supa, { actor: null, action: 'member_approve', target_type: 'team_member', target_id: id, payload: { email: data?.email } });
   return send(res, 200, { member: data });
 }
 
@@ -98,6 +94,7 @@ async function deny(supa, body, res) {
   }
   const { error } = await supa.from('team_members').delete().eq('id', id);
   if (error) throw error;
+  logAdminAction(supa, { actor: null, action: 'member_deny', target_type: 'team_member', target_id: id, payload: { auth_user_id: row.auth_user_id } });
   return send(res, 200, { ok: true });
 }
 
@@ -108,6 +105,7 @@ async function setActive(supa, body, res, value) {
     .update({ active: value, signup_pending: false })
     .eq('id', id).select('*').single();
   if (error) throw error;
+  logAdminAction(supa, { actor: null, action: value ? 'member_reactivate' : 'member_deactivate', target_type: 'team_member', target_id: id, payload: { email: data?.email } });
   return send(res, 200, { member: data });
 }
 
@@ -131,6 +129,7 @@ async function update(supa, body, res) {
 
   const { data, error } = await supa.from('team_members').update(patch).eq('id', id).select('*').single();
   if (error) throw error;
+  logAdminAction(supa, { actor: null, action: 'member_update', target_type: 'team_member', target_id: id, payload: { fields: Object.keys(patch) } });
   return send(res, 200, { member: data });
 }
 
@@ -142,6 +141,7 @@ async function resetPassword(supa, body, res) {
   if (!row?.auth_user_id) return send(res, 404, { error: 'no_auth_user' });
   const { error } = await supa.auth.admin.updateUserById(row.auth_user_id, { password });
   if (error) throw error;
+  logAdminAction(supa, { actor: null, action: 'member_reset_password', target_type: 'team_member', target_id: id });
   return send(res, 200, { ok: true });
 }
 
@@ -155,5 +155,6 @@ async function hardDelete(supa, body, res) {
   }
   const { error } = await supa.from('team_members').delete().eq('id', id);
   if (error) throw error;
+  logAdminAction(supa, { actor: null, action: 'member_delete', target_type: 'team_member', target_id: id, payload: { auth_user_id: row.auth_user_id } });
   return send(res, 200, { ok: true });
 }

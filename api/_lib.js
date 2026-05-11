@@ -112,6 +112,45 @@ export function isHttpUrl(s) {
   } catch { return false; }
 }
 
+// Curated palette — chip dots are picked first-come, first-served from this
+// list. Once exhausted (17th member onward), we fall back to a deterministic
+// HSL derived from the member's name so the team can grow without recoloring.
+export const COLOR_PALETTE = [
+  '#1f6b6b','#7a4e2d','#2d5f3f','#8b2c3d','#4a4a7a','#a85a1f',
+  '#3a4a7a','#6b3a6e','#5e7a2d','#a8492e','#2d4f7a','#7a5a2d',
+  '#4a6e5e','#6e2d4a','#3a5a6e','#8b6e2d',
+];
+
+export async function nextAvailableColor(supa, nameForFallback = '') {
+  const { data, error } = await supa.from('team_members').select('color');
+  if (error) return COLOR_PALETTE[0];
+  const used = new Set((data || []).map(m => (m.color || '').toLowerCase()));
+  for (const c of COLOR_PALETTE) if (!used.has(c.toLowerCase())) return c;
+  return colorFromName(nameForFallback);
+}
+
+export function colorFromName(name) {
+  const s = String(name || '').trim().toLowerCase();
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) >>> 0;
+  const hue = h % 360;
+  // Match the muted, hand-picked saturation/lightness of the curated palette.
+  return `hsl(${hue}, 45%, 35%)`;
+}
+
+// Audit log helper. Writes to admin_actions table. Fire-and-forget — never
+// fails the calling endpoint.
+export async function logAdminAction(supa, { actor, action, target_type = null, target_id = null, payload = null }) {
+  try {
+    await supa.from('admin_actions').insert({
+      actor_email: actor || process.env.ADMIN_EMAIL || 'admin',
+      action, target_type, target_id, payload,
+    });
+  } catch (err) {
+    console.error('audit log', err);
+  }
+}
+
 export function dayCount(start, end) {
   const a = new Date(`${start}T00:00:00Z`);
   const b = new Date(`${end}T00:00:00Z`);

@@ -60,6 +60,20 @@ create table if not exists push_subscriptions (
 create index if not exists push_subs_member_idx on push_subscriptions (member_id);
 create index if not exists push_subs_admin_idx  on push_subscriptions (is_admin);
 
+-- Audit log of admin actions. Written by every admin endpoint; never read
+-- by the app — query directly in SQL Editor when you need it.
+create table if not exists admin_actions (
+  id            uuid primary key default gen_random_uuid(),
+  actor_email   text,
+  action        text not null,
+  target_type   text,
+  target_id     text,
+  payload       jsonb,
+  created_at    timestamptz not null default now()
+);
+create index if not exists admin_actions_created_idx on admin_actions (created_at desc);
+create index if not exists admin_actions_action_idx  on admin_actions (action);
+
 -- =============================================================
 -- HELPER FUNCTIONS
 -- =============================================================

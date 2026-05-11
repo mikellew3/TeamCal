@@ -136,6 +136,17 @@
       <div class="login-msg" id="signin-msg" role="status" aria-live="polite"></div>
     </form>
 
+    <!-- MFA challenge (shown after password if user has 2FA enabled) -->
+    <form id="mfa-form" class="hidden" autocomplete="off">
+      <div class="login-helper">Two-factor required. Enter the 6-digit code from your authenticator app.</div>
+      <div class="field">
+        <label for="mfa-code">Authentication Code</label>
+        <input id="mfa-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" required autocomplete="one-time-code" />
+      </div>
+      <button type="submit" id="mfa-btn">Verify</button>
+      <div class="login-msg" id="mfa-msg" role="status" aria-live="polite"></div>
+    </form>
+
     <!-- Sign Up -->
     <form id="signup-form" class="hidden" autocomplete="on">
       <div class="login-helper">
@@ -223,12 +234,15 @@
     }
     function clearMsg(el) { setMsg(el, '', ''); }
 
-    // Already signed in? Bounce to /index.html.
+    // Already signed in? Bounce to /index.html (or MFA challenge if needed).
     (async () => {
       try {
         const supa = await initSupabase();
         const { data } = await supa.auth.getSession();
-        if (data?.session) window.location.replace('/index.html');
+        if (data?.session) {
+          const needsMfa = await maybeChallengeMfa();
+          if (!needsMfa) window.location.replace('/index.html');
+        }
       } catch (e) {
         console.error('login init', e);
         const m = document.getElementById('signin-msg');
@@ -237,6 +251,29 @@
     })();
 
     // Sign In handler
+    const mfaForm = document.getElementById('mfa-form');
+    let mfaContext = null; // { factorId, challengeId }
+
+    async function maybeChallengeMfa() {
+      const supa = await initSupabase();
+      const { data: aal } = await supa.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aal?.nextLevel !== 'aal2' || aal?.currentLevel === 'aal2') {
+        return false;
+      }
+      const { data: factors } = await supa.auth.mfa.listFactors();
+      const totp = (factors?.totp || []).find(f => f.status === 'verified');
+      if (!totp) return false;
+      const { data: ch, error: chErr } = await supa.auth.mfa.challenge({ factorId: totp.id });
+      if (chErr || !ch) return false;
+      mfaContext = { factorId: totp.id, challengeId: ch.id };
+      signinForm.classList.add('hidden');
+      signupForm.classList.add('hidden');
+      document.querySelector('.login-tabs').style.display = 'none';
+      mfaForm.classList.remove('hidden');
+      document.getElementById('mfa-code').focus();
+      return true;
+    }
+
     signinForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const msg = document.getElementById('signin-msg');
@@ -251,6 +288,40 @@
         const { error } = await supa.auth.signInWithPassword({ email, password });
         if (error) {
           setMsg(msg, error.message || 'Could not sign in.', 'error');
+          btn.disabled = false;
+          return;
+        }
+        const needsMfa = await maybeChallengeMfa();
+        if (needsMfa) {
+          btn.disabled = false;
+          return;
+        }
+        window.location.replace('/index.html');
+      } catch (err) {
+        console.error(err);
+        setMsg(msg, 'Unexpected error. Try again.', 'error');
+        btn.disabled = false;
+      }
+    });
+
+    mfaForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById('mfa-msg');
+      const btn = document.getElementById('mfa-btn');
+      const code = document.getElementById('mfa-code').value.trim();
+      if (!/^\d{6}$/.test(code)) { setMsg(msg, 'Enter a 6-digit code.', 'error'); return; }
+      if (!mfaContext) { setMsg(msg, 'Session expired. Sign in again.', 'error'); return; }
+      btn.disabled = true;
+      setMsg(msg, 'Verifying…', 'info');
+      try {
+        const supa = await initSupabase();
+        const { error } = await supa.auth.mfa.verify({
+          factorId: mfaContext.factorId,
+          challengeId: mfaContext.challengeId,
+          code,
+        });
+        if (error) {
+          setMsg(msg, error.message || 'Invalid code. Try again.', 'error');
           btn.disabled = false;
           return;
         }

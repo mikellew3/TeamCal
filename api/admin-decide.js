@@ -1,7 +1,7 @@
 import {
   serviceClient, readJson, send, methodGuard, verifyAdminToken,
   TIME_AWAY_TYPES, TYPE_LABEL,
-  timeAwayConflicts, classifyConflict, formatRange,
+  timeAwayConflicts, classifyConflict, formatRange, logAdminAction,
 } from './_lib.js';
 import { sendPush } from './_push.js';
 
@@ -58,6 +58,12 @@ export default async function handler(req, res) {
       .select('*')
       .single();
     if (error) throw error;
+
+    logAdminAction(supa, {
+      actor: null, action: `entry_${status}`,
+      target_type: 'calendar_entry', target_id: id,
+      payload: { member_id: entry.member_id, event_type: entry.event_type, override: !!override },
+    });
 
     // Push to the requesting member (only Time Away has a member).
     if (entry.member_id) {

@@ -579,6 +579,7 @@
       <div class="mast-r">
         <button class="primary disable-when-offline" id="btn-request">Request Time Away</button>
         <button class="ghost disable-when-offline" id="btn-add-entry" hidden>Add Entry</button>
+        <button class="ghost" id="btn-security">Security</button>
         <button class="ghost" id="btn-admin">Admin</button>
         <button class="ghost" id="btn-signout">Sign Out</button>
       </div>
@@ -773,7 +774,7 @@
         <div class="field">
           <label for="req-notes">Notes (optional)</label>
           <textarea id="req-notes" maxlength="500" placeholder="Anything Mike should know"></textarea>
-          <div style="font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:0.02em;">Visible to admin and you only.</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:0.02em;">Visible to admin and you only. <strong style="color:var(--warn);">Do not include any patient information.</strong></div>
         </div>
 
         <div class="modal-actions">
@@ -839,6 +840,7 @@
         <div class="field">
           <label for="add-notes">Notes (optional)</label>
           <textarea id="add-notes" maxlength="500"></textarea>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:0.02em;"><strong style="color:var(--warn);">Do not include any patient information.</strong></div>
         </div>
 
         <div class="modal-actions">
@@ -904,6 +906,7 @@
         <div class="field">
           <label for="edit-notes">Notes</label>
           <textarea id="edit-notes" maxlength="500"></textarea>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:0.02em;"><strong style="color:var(--warn);">Do not include any patient information.</strong></div>
         </div>
 
         <div class="modal-actions">
@@ -1029,6 +1032,44 @@
         <button type="button" class="primary" id="btn-resetpw-save">Reset</button>
       </div>
       <div id="resetpw-msg" style="font-size:11px;color:var(--neg);margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <!-- SECURITY (MFA) MODAL -->
+  <div class="modal-backdrop" id="security-backdrop" data-modal>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="security-title">
+      <div class="eyebrow">Account Security</div>
+      <h2 id="security-title">Two-Factor Authentication</h2>
+      <div class="modal-sub">Use an authenticator app (Google Authenticator, Authy, 1Password, etc.) for a second layer of protection.</div>
+
+      <div id="security-status" style="font-size:13px;color:var(--ink-2);margin-bottom:14px;">Checking…</div>
+
+      <!-- Step 1: enroll (QR + secret) -->
+      <div id="security-enroll" hidden>
+        <div style="text-align:center;margin-bottom:12px;">
+          <img id="security-qr" alt="MFA QR code" style="width:180px;height:180px;background:#fff;border:1px solid var(--line);padding:6px;" />
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Or enter this secret manually:</div>
+        <code id="security-secret" style="display:block;font-family:Menlo,monospace;font-size:12px;background:var(--paper-warm);padding:8px 10px;border:1px solid var(--line);margin-bottom:14px;word-break:break-all;"></code>
+        <div class="field">
+          <label for="security-code">Enter 6-digit code from your app</label>
+          <input id="security-code" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]*" />
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="ghost" id="btn-security-cancel-enroll">Cancel</button>
+          <button type="button" class="primary" id="btn-security-verify">Verify &amp; Enable</button>
+        </div>
+      </div>
+
+      <!-- Step 0/2: idle (start enroll or disable) -->
+      <div id="security-idle" hidden>
+        <div class="modal-actions">
+          <button type="button" class="ghost" id="btn-security-close">Close</button>
+          <button type="button" class="primary" id="btn-security-action">Enable 2FA</button>
+        </div>
+      </div>
+
+      <div id="security-msg" style="font-size:12px;margin-top:8px;"></div>
     </div>
   </div>
 
@@ -1289,6 +1330,11 @@
       document.getElementById('btn-admin').onclick     = openAdminLogin;
       document.getElementById('btn-signout').onclick   = signOut;
       document.getElementById('btn-admin-signout').onclick = endAdminSession;
+      document.getElementById('btn-security').onclick           = openSecurityModal;
+      document.getElementById('btn-security-close').onclick     = () => closeModal('security-backdrop');
+      document.getElementById('btn-security-cancel-enroll').onclick = cancelEnroll;
+      document.getElementById('btn-security-verify').onclick    = verifyEnroll;
+      document.getElementById('btn-security-action').onclick    = handleSecurityAction;
       document.getElementById('btn-manage-members').onclick = openMembersModal;
       document.getElementById('btn-members-close').onclick   = () => closeModal('members-backdrop');
       document.getElementById('btn-members-refresh').onclick = loadMembersList;
@@ -2218,6 +2264,124 @@
       refreshAdminUi();
       renderAll();
       toast('Admin session expired. Sign in again.', 'error');
+    }
+
+    /* ============================================================
+     * SECURITY / MFA
+     * ============================================================ */
+    let pendingFactor = null; // { id, secret, qr }
+
+    async function openSecurityModal() {
+      openModal('security-backdrop');
+      const status = document.getElementById('security-status');
+      const idle   = document.getElementById('security-idle');
+      const enroll = document.getElementById('security-enroll');
+      const msg    = document.getElementById('security-msg');
+      msg.textContent = '';
+      enroll.hidden = true;
+      idle.hidden = true;
+      status.textContent = 'Checking…';
+      try {
+        const { data: factors, error } = await state.supabase.auth.mfa.listFactors();
+        if (error) throw error;
+        const totp = (factors?.totp || []).find(f => f.status === 'verified');
+        const btn = document.getElementById('btn-security-action');
+        if (totp) {
+          status.innerHTML = '<strong style="color:var(--pos);">2FA is enabled</strong> on this account.';
+          btn.textContent = 'Disable 2FA';
+          btn.dataset.mode = 'disable';
+          btn.dataset.factorId = totp.id;
+        } else {
+          status.textContent = '2FA is not yet enabled. Enable it for an extra layer of protection.';
+          btn.textContent = 'Enable 2FA';
+          btn.dataset.mode = 'enroll';
+          btn.dataset.factorId = '';
+        }
+        idle.hidden = false;
+      } catch (err) {
+        status.textContent = 'Could not load security settings.';
+        console.error('security modal', err);
+      }
+    }
+
+    async function handleSecurityAction(e) {
+      const btn = e.currentTarget;
+      const mode = btn.dataset.mode;
+      const msg = document.getElementById('security-msg');
+      msg.textContent = '';
+      msg.style.color = 'var(--neg)';
+      btn.disabled = true;
+      try {
+        if (mode === 'enroll') {
+          // Clean up any orphan unverified factors first (Supabase rejects
+          // a second enroll with the same friendly name).
+          const { data: factors } = await state.supabase.auth.mfa.listFactors();
+          for (const f of (factors?.totp || [])) {
+            if (f.status !== 'verified') {
+              await state.supabase.auth.mfa.unenroll({ factorId: f.id }).catch(() => {});
+            }
+          }
+          const { data, error } = await state.supabase.auth.mfa.enroll({ factorType: 'totp' });
+          if (error) throw error;
+          pendingFactor = { id: data.id, secret: data.totp.secret, qr: data.totp.qr_code };
+          document.getElementById('security-qr').src = data.totp.qr_code;
+          document.getElementById('security-secret').textContent = data.totp.secret;
+          document.getElementById('security-code').value = '';
+          document.getElementById('security-idle').hidden = true;
+          document.getElementById('security-enroll').hidden = false;
+          document.getElementById('security-code').focus();
+        } else if (mode === 'disable') {
+          if (!confirm('Disable two-factor authentication? You will only need your password to sign in.')) {
+            btn.disabled = false;
+            return;
+          }
+          const factorId = btn.dataset.factorId;
+          const { error } = await state.supabase.auth.mfa.unenroll({ factorId });
+          if (error) throw error;
+          msg.style.color = 'var(--pos)';
+          msg.textContent = '2FA disabled.';
+          setTimeout(openSecurityModal, 600);
+        }
+      } catch (err) {
+        msg.textContent = err.message || 'Failed.';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function verifyEnroll() {
+      const msg = document.getElementById('security-msg');
+      const code = document.getElementById('security-code').value.trim();
+      msg.style.color = 'var(--neg)';
+      msg.textContent = '';
+      if (!/^\d{6}$/.test(code)) { msg.textContent = 'Enter the 6-digit code.'; return; }
+      if (!pendingFactor) { msg.textContent = 'Session lost. Restart enrollment.'; return; }
+      const btn = document.getElementById('btn-security-verify');
+      btn.disabled = true;
+      try {
+        const { data: ch, error: chErr } = await state.supabase.auth.mfa.challenge({ factorId: pendingFactor.id });
+        if (chErr) throw chErr;
+        const { error } = await state.supabase.auth.mfa.verify({
+          factorId: pendingFactor.id, challengeId: ch.id, code,
+        });
+        if (error) throw error;
+        pendingFactor = null;
+        msg.style.color = 'var(--pos)';
+        msg.textContent = '2FA enabled. You\'ll be asked for a code on next sign-in.';
+        setTimeout(openSecurityModal, 800);
+      } catch (err) {
+        msg.textContent = err.message || 'Code didn\'t verify. Try again.';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function cancelEnroll() {
+      if (pendingFactor) {
+        await state.supabase.auth.mfa.unenroll({ factorId: pendingFactor.id }).catch(() => {});
+        pendingFactor = null;
+      }
+      openSecurityModal();
     }
 
     /* ============================================================

@@ -1,7 +1,7 @@
 import {
   serviceClient, readJson, send, methodGuard, verifyAdminToken,
   ALL_TYPES, TYPE_LABEL, TIME_AWAY_TYPES,
-  isYmd, isHttpUrl, formatRange,
+  isYmd, isHttpUrl, formatRange, logAdminAction,
 } from './_lib.js';
 import { sendPush } from './_push.js';
 
@@ -61,6 +61,12 @@ export default async function handler(req, res) {
     if (data && data.start_date && data.end_date && data.end_date < data.start_date) {
       return send(res, 400, { error: 'invalid_date_range' });
     }
+
+    logAdminAction(supa, {
+      actor: null, action: 'entry_update',
+      target_type: 'calendar_entry', target_id: id,
+      payload: { fields: Object.keys(update) },
+    });
 
     if (data?.member_id && TIME_AWAY_TYPES.includes(data.event_type)) {
       const typeLabel = TYPE_LABEL[data.event_type] || data.event_type;
