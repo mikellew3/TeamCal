@@ -663,6 +663,7 @@
         <button class="primary disable-when-offline" id="btn-request">Request Time Away</button>
         <button class="ghost disable-when-offline" id="btn-add-entry" hidden>Add Entry</button>
         <button class="ghost" id="btn-security">Security</button>
+        <button class="ghost" id="btn-notifications">Notifications</button>
         <button class="ghost" id="btn-admin">Admin</button>
         <button class="ghost" id="btn-signout">Sign Out</button>
       </div>
@@ -1120,6 +1121,26 @@
     </div>
   </div>
 
+  <!-- NOTIFICATIONS MODAL -->
+  <div class="modal-backdrop" id="notif-backdrop" data-modal>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="notif-title">
+      <div class="eyebrow">Notifications</div>
+      <h2 id="notif-title">Push Notifications</h2>
+      <div class="modal-sub">Get a push when Mike decides on your request, or when a new request comes in for admin review. Per device — turn it on for each phone/computer you want pings on.</div>
+
+      <div id="notif-status" style="font-size:13px;color:var(--ink-2);margin-bottom:14px;">Checking…</div>
+
+      <div id="notif-idle" hidden>
+        <div class="modal-actions">
+          <button type="button" class="ghost" id="btn-notif-close">Close</button>
+          <button type="button" class="primary" id="btn-notif-action">Enable Notifications</button>
+        </div>
+      </div>
+
+      <div id="notif-msg" style="font-size:12px;margin-top:8px;"></div>
+    </div>
+  </div>
+
   <!-- SECURITY (MFA) MODAL -->
   <div class="modal-backdrop" id="security-backdrop" data-modal>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="security-title">
@@ -1459,6 +1480,9 @@
       document.getElementById('btn-signout').onclick   = signOut;
       document.getElementById('btn-admin-signout').onclick = endAdminSession;
       document.getElementById('btn-security').onclick           = openSecurityModal;
+      document.getElementById('btn-notifications').onclick      = openNotifModal;
+      document.getElementById('btn-notif-close').onclick        = () => closeModal('notif-backdrop');
+      document.getElementById('btn-notif-action').onclick       = handleNotifAction;
       document.getElementById('btn-security-close').onclick     = () => closeModal('security-backdrop');
       document.getElementById('btn-security-cancel-enroll').onclick = cancelEnroll;
       document.getElementById('btn-security-verify').onclick    = verifyEnroll;
@@ -2656,6 +2680,126 @@
         pendingFactor = null;
       }
       openSecurityModal();
+    }
+
+    /* ============================================================
+     * NOTIFICATIONS (web push)
+     * ============================================================ */
+    async function openNotifModal() {
+      openModal('notif-backdrop');
+      const status = document.getElementById('notif-status');
+      const idle   = document.getElementById('notif-idle');
+      const msg    = document.getElementById('notif-msg');
+      const btn    = document.getElementById('btn-notif-action');
+      msg.textContent = '';
+      idle.hidden = true;
+      status.textContent = 'Checking…';
+
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+        status.innerHTML = '<strong style="color:var(--neg);">Push isn\'t supported on this browser.</strong><br/><span style="color:var(--muted);">On iOS, you need iOS 16.4+ and the app must be added to your Home Screen and launched from there (not Safari).</span>';
+        btn.disabled = true;
+        idle.hidden = false;
+        return;
+      }
+      if (!state.vapidPublicKey) {
+        status.innerHTML = '<strong style="color:var(--neg);">Notifications aren\'t configured on the server.</strong><br/><span style="color:var(--muted);">The VAPID public key is missing. Ask Mike to set it.</span>';
+        btn.disabled = true;
+        idle.hidden = false;
+        return;
+      }
+
+      try {
+        const reg = state.swRegistration || await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        const perm = Notification.permission;
+
+        btn.dataset.mode = '';
+        btn.disabled = false;
+
+        if (perm === 'denied') {
+          status.innerHTML = '<strong style="color:var(--neg);">Notifications are blocked.</strong><br/><span style="color:var(--muted);">Re-enable in your browser/OS settings, then come back.</span>';
+          btn.textContent = 'How to re-enable';
+          btn.dataset.mode = 'help';
+        } else if (existing && perm === 'granted') {
+          status.innerHTML = '<strong style="color:var(--pos);">Notifications are enabled</strong> on this device.';
+          btn.textContent = 'Disable on This Device';
+          btn.dataset.mode = 'disable';
+        } else {
+          status.textContent = 'Notifications are off on this device. Enable them to get a push when your request is decided.';
+          btn.textContent = 'Enable Notifications';
+          btn.dataset.mode = 'enable';
+        }
+        idle.hidden = false;
+      } catch (err) {
+        console.error('notif modal', err);
+        status.textContent = 'Could not check notification status.';
+        idle.hidden = false;
+      }
+    }
+
+    async function handleNotifAction(e) {
+      const btn = e.currentTarget;
+      const mode = btn.dataset.mode;
+      const msg = document.getElementById('notif-msg');
+      msg.textContent = '';
+      msg.style.color = 'var(--neg)';
+      btn.disabled = true;
+      try {
+        if (mode === 'help') {
+          msg.style.color = 'var(--ink-2)';
+          msg.innerHTML = '<strong>iOS:</strong> Settings → Notifications → MGSA Calendar → Allow Notifications.<br/><strong>Android Chrome:</strong> tap ⋮ → Site settings → Notifications → Allow.<br/><strong>Desktop Chrome:</strong> click the lock icon in the URL bar → Notifications → Allow.';
+          btn.disabled = false;
+          return;
+        }
+        const reg = state.swRegistration || await navigator.serviceWorker.ready;
+        if (mode === 'enable') {
+          const perm = await Notification.requestPermission();
+          if (perm !== 'granted') {
+            msg.textContent = perm === 'denied' ? 'Permission was denied.' : 'Permission not granted.';
+            btn.disabled = false;
+            return;
+          }
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(state.vapidPublicKey),
+          });
+          const r = await fetch('/api/subscribe-push', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${state.session.access_token}`,
+            },
+            body: JSON.stringify({ scope: 'member', subscription: sub.toJSON() }),
+          });
+          if (!r.ok) {
+            const j = await r.json().catch(() => ({}));
+            throw new Error(j.error || 'subscribe failed');
+          }
+          msg.style.color = 'var(--pos)';
+          msg.textContent = 'Notifications enabled on this device.';
+          setTimeout(openNotifModal, 600);
+        } else if (mode === 'disable') {
+          const existing = await reg.pushManager.getSubscription();
+          if (existing) await existing.unsubscribe().catch(() => {});
+          msg.style.color = 'var(--pos)';
+          msg.textContent = 'Notifications disabled on this device.';
+          setTimeout(openNotifModal, 600);
+        }
+      } catch (err) {
+        console.error('notif action', err);
+        msg.textContent = err.message || 'Failed.';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(base64);
+      const out = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; ++i) out[i] = raw.charCodeAt(i);
+      return out;
     }
 
     /* ============================================================
