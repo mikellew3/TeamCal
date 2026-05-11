@@ -163,7 +163,7 @@
     <!-- Sign Up -->
     <form id="signup-form" class="hidden" autocomplete="on">
       <div class="login-helper">
-        Sign up with your work email. Mike will approve your access — you'll get a notification when you're in.
+        Sign up with your work email. Admin will approve your access — you'll get a notification when you're in.
       </div>
       <div class="field">
         <label for="signup-name">Full Name</label>
@@ -381,7 +381,7 @@
         const j = await r.json().catch(() => ({}));
         if (!r.ok) {
           if (j.error === 'already_exists') {
-            setMsg(msg, 'An account with that email already exists. Use Sign In, or contact Mike.', 'error');
+            setMsg(msg, 'An account with that email already exists. Use Sign In, or contact the admin.', 'error');
           } else if (j.error === 'invalid_password') {
             setMsg(msg, 'Password must be at least 8 characters.', 'error');
           } else {
@@ -394,7 +394,7 @@
         const supa = await initSupabase();
         const { error: signInErr } = await supa.auth.signInWithPassword({ email, password });
         if (signInErr) {
-          setMsg(msg, 'Account created. Sign in once Mike has approved you.', 'success');
+          setMsg(msg, 'Account created. Sign in once the admin has approved you.', 'success');
           signupBtn.disabled = false;
           return;
         }
