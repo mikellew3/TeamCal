@@ -609,6 +609,12 @@
 
     /* Tap-target floor on desktop too */
     button, .btn { min-height:32px; }
+
+    /* Notifications is a mobile-only feature — push is most useful on a
+       phone you carry; on desktop it just clutters the masthead. */
+    @media (min-width:721px) {
+      #btn-notifications { display:none !important; }
+    }
   </style>
 </head>
 <body>
