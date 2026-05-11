@@ -28,7 +28,7 @@ export default async function handler(req, res) {
   }
 
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
-  const RESEND_FROM    = process.env.RESEND_FROM || 'PA Calendar <onboarding@resend.dev>';
+  const RESEND_FROM    = process.env.RESEND_FROM || 'MG Surgical Associates Calendar <onboarding@resend.dev>';
   const ADMIN_EMAIL    = process.env.ADMIN_EMAIL;
   const APP_URL        = process.env.APP_URL || '';
 
