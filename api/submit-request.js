@@ -113,18 +113,54 @@ export default async function handler(req, res) {
     },
   }).catch(err => console.error('push admin', err));
 
-  notifyAdmin(req, entry.id).catch(err => console.error('email admin', err));
+  sendAdminEmail({ memberName: member.name, typeLabel, days, range, notes: entry.notes })
+    .catch(err => console.error('email admin', err));
 
   return send(res, 200, { id: entry.id, entry, watch: verdict.state === 'watch' });
 }
 
-async function notifyAdmin(req, entryId) {
-  const proto = (req.headers['x-forwarded-proto'] || 'https').toString();
-  const host  = req.headers['host'];
-  if (!host) return;
-  await fetch(`${proto}://${host}/api/notify-request`, {
+async function sendAdminEmail({ memberName, typeLabel, days, range, notes }) {
+  const RESEND_API_KEY = process.env.RESEND_API_KEY;
+  const RESEND_FROM    = process.env.RESEND_FROM || 'MGH PA Team Calendar <onboarding@resend.dev>';
+  const ADMIN_EMAIL    = process.env.ADMIN_EMAIL;
+  if (!RESEND_API_KEY || !ADMIN_EMAIL) return;
+
+  const subject = `[Team Cal] ${memberName} requested ${days} day${days === 1 ? '' : 's'} of ${typeLabel} (${range})`;
+  const inter = "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+  const serif = "'Source Serif 4',Georgia,serif";
+  const ink='#1a2a33', ink2='#3a4a52', muted='#6b7780', accent='#1f6b6b', line='rgba(26,42,51,0.14)';
+  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#e8e6e1;font-family:${inter};color:${ink};">
+<table width="100%" cellspacing="0" cellpadding="0" style="background:#e8e6e1;padding:32px 16px;"><tr><td align="center">
+<table width="560" cellspacing="0" cellpadding="0" style="background:#fff;max-width:560px;border-radius:2px;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
+<tr><td style="padding:28px 32px 24px;">
+<div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:${accent};font-weight:600;margin-bottom:6px;">MGH Robotic Surgery PA Team · New Request</div>
+<div style="font-family:${serif};font-size:22px;font-weight:600;color:${ink};letter-spacing:-0.005em;margin:0 0 4px;">${escapeHtml(memberName)} requested ${escapeHtml(typeLabel)}</div>
+<div style="font-size:12px;color:${muted};margin-bottom:18px;">A new time-away request is awaiting your decision.</div>
+<table width="100%" cellspacing="0" cellpadding="0" style="border-top:1.5px solid ${ink};border-bottom:1.5px solid ${ink};margin-bottom:18px;">
+<tr><td style="padding:14px 0 6px;vertical-align:top;">
+<div style="font-size:10px;letter-spacing:0.10em;text-transform:uppercase;color:${muted};font-weight:600;margin-bottom:4px;">Days</div>
+<div style="font-family:${serif};font-size:36px;font-weight:600;color:${ink};line-height:1;letter-spacing:-0.01em;">${days}</div>
+</td><td style="padding:14px 0 6px;vertical-align:top;text-align:right;">
+<div style="font-size:10px;letter-spacing:0.10em;text-transform:uppercase;color:${muted};font-weight:600;margin-bottom:4px;">Type</div>
+<div style="font-family:${serif};font-size:18px;font-weight:600;color:${accent};line-height:1.2;">${escapeHtml(typeLabel)}</div>
+</td></tr></table>
+<table width="100%" cellspacing="0" cellpadding="0" style="font-size:13px;color:${ink};">
+<tr><td style="padding:6px 0;border-bottom:1px solid ${line};color:${ink2};font-size:11px;letter-spacing:0.05em;text-transform:uppercase;font-weight:600;width:30%;">Member</td><td style="padding:6px 0;border-bottom:1px solid ${line};">${escapeHtml(memberName)}</td></tr>
+<tr><td style="padding:6px 0;border-bottom:1px solid ${line};color:${ink2};font-size:11px;letter-spacing:0.05em;text-transform:uppercase;font-weight:600;">Range</td><td style="padding:6px 0;border-bottom:1px solid ${line};">${escapeHtml(range)}</td></tr>
+<tr><td style="padding:6px 0;border-bottom:1px solid ${line};color:${ink2};font-size:11px;letter-spacing:0.05em;text-transform:uppercase;font-weight:600;">Notes</td><td style="padding:6px 0;border-bottom:1px solid ${line};color:${notes ? ink : muted};">${notes ? escapeHtml(notes) : '—'}</td></tr>
+</table>
+<div style="margin-top:20px;padding-top:14px;border-top:1px solid ${line};font-size:11px;color:${muted};letter-spacing:0.04em;">Sign in to the calendar and use the admin panel to approve, deny, or override.</div>
+</td></tr></table>
+<div style="font-size:10px;color:${muted};letter-spacing:0.04em;margin-top:14px;">MGH Robotic Surgery PA Team · Calendar</div>
+</td></tr></table></body></html>`;
+
+  await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entry_id: entryId }),
+    headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: RESEND_FROM, to: [ADMIN_EMAIL], subject, html }),
   });
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
