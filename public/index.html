@@ -459,6 +459,17 @@
     .admin-panel .pending-count {
       font-family:'Source Serif 4',serif;font-size:18px;font-weight:600;color:var(--accent);
     }
+    .admin-pending-trigger {
+      display:inline-flex;align-items:center;gap:8px;
+      background:transparent;border:1px solid transparent;
+      padding:4px 10px;margin:-4px -10px;border-radius:4px;
+      font-family:'Inter';font-size:12px;color:var(--ink);cursor:pointer;
+      min-height:auto;
+    }
+    .admin-pending-trigger:hover:not(:disabled) {
+      background:var(--accent-soft);border-color:var(--line);color:var(--ink);
+    }
+    .admin-pending-trigger:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
 
     /* ============ EMPTY STATE ============ */
     .empty-state {
@@ -686,8 +697,10 @@
     <!-- ADMIN PANEL -->
     <div class="admin-panel" id="admin-panel" hidden>
       <div class="left">
-        <span class="pending-count" id="admin-pending-count">0</span>
-        <span>pending request(s) — click any chip to decide.</span>
+        <button type="button" id="admin-pending-trigger" class="admin-pending-trigger" title="Review pending requests in order of submission">
+          <span class="pending-count" id="admin-pending-count">0</span>
+          <span>pending request(s) — tap to review</span>
+        </button>
         <span id="admin-pending-members" hidden style="margin-left:14px;padding-left:14px;border-left:1px solid var(--line);">
           <strong id="admin-pending-members-count" style="color:var(--warn);">0</strong>
           <span> new signup(s) awaiting approval</span>
@@ -790,6 +803,19 @@
           <button class="primary" id="btn-day-add">Add Entry on This Day</button>
         </div>
         <button class="ghost" id="btn-day-overview-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PENDING REQUESTS MODAL (admin) -->
+  <div class="modal-backdrop" id="pending-backdrop" data-modal>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pending-title">
+      <div class="eyebrow">Admin Review</div>
+      <h2 id="pending-title">Pending Requests</h2>
+      <div class="modal-sub" id="pending-sub">Oldest first. Tap a row to approve or deny.</div>
+      <div class="day-overview-list" id="pending-list"></div>
+      <div class="modal-actions">
+        <button class="ghost" id="btn-pending-close">Close</button>
       </div>
     </div>
   </div>
@@ -1485,6 +1511,8 @@
       document.getElementById('btn-admin').onclick     = openAdminLogin;
       document.getElementById('btn-signout').onclick   = signOut;
       document.getElementById('btn-admin-signout').onclick = endAdminSession;
+      document.getElementById('admin-pending-trigger').onclick = openPendingModal;
+      document.getElementById('btn-pending-close').onclick    = () => closeModal('pending-backdrop');
       document.getElementById('btn-security').onclick           = openSecurityModal;
       document.getElementById('btn-notifications').onclick      = openNotifModal;
       document.getElementById('btn-notif-close').onclick        = () => closeModal('notif-backdrop');
@@ -1647,6 +1675,63 @@
       if (!isAdminMode()) return;
       const pending = state.entries.filter(e => e.status === 'pending').length;
       document.getElementById('admin-pending-count').textContent = pending;
+      const trig = document.getElementById('admin-pending-trigger');
+      if (trig) trig.disabled = pending === 0;
+    }
+
+    function openPendingModal() {
+      if (!isAdminMode()) return;
+      const pending = state.entries
+        .filter(e => e.status === 'pending')
+        .sort((a, b) => (a.requested_at || '').localeCompare(b.requested_at || ''));
+      const sub  = document.getElementById('pending-sub');
+      const list = document.getElementById('pending-list');
+      list.innerHTML = '';
+      if (!pending.length) {
+        sub.textContent = 'All caught up — no pending requests.';
+        list.innerHTML = '<div class="day-overview-empty">Nothing to review.<div class="helper">New requests will appear here in the order they\'re submitted.</div></div>';
+        openModal('pending-backdrop');
+        return;
+      }
+      sub.textContent = `${pending.length} pending — oldest first. Tap a row to approve or deny.`;
+      const fmtSubmitted = (iso) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      };
+      for (const e of pending) {
+        const meta = TYPE_META[e.event_type] || { tag:'?', label:'?', category:'time_away' };
+        const member = e.member_id ? state.members.find(m => m.id === e.member_id) : null;
+        const memberName = member?.name || 'Unknown';
+        const days = expandRange(e.start_date, e.end_date).length;
+        const range = e.start_date === e.end_date
+          ? formatDayLong(e.start_date)
+          : `${formatDayLong(e.start_date)} → ${formatDayLong(e.end_date)}`;
+        const notePreview = (e.notes || '').trim();
+        const row = document.createElement('div');
+        row.className = 'day-overview-row';
+        row.innerHTML = `
+          <div class="row-meta">
+            <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+              <span class="chip cat-${meta.category === 'time_away' ? 'time-away' : meta.category === 'events' ? 'events' : 'coverage'} pending" style="margin:0;flex-shrink:0;">
+                ${meta.tag ? `<span class="type-tag">${meta.tag}</span>` : ''}
+                <span class="label">${escapeHtml(memberName)}</span>
+              </span>
+              <span style="font-size:12px;color:var(--ink-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                ${days} day${days === 1 ? '' : 's'} · ${escapeHtml(range)}
+              </span>
+            </div>
+            <span class="row-arrow">${fmtSubmitted(e.requested_at)} ›</span>
+          </div>
+          ${notePreview ? `<div class="note-preview">"${escapeHtml(notePreview)}"</div>` : ''}
+        `;
+        row.onclick = () => {
+          closeModal('pending-backdrop');
+          openDetail(e);
+        };
+        list.appendChild(row);
+      }
+      openModal('pending-backdrop');
     }
 
     function renderKpis() {
