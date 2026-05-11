@@ -602,6 +602,13 @@
       </div>
     </div>
 
+    <!-- 2FA NAG (shown until user enables MFA) -->
+    <div id="mfa-nag" hidden style="margin:10px 0 14px;padding:12px 14px;border:1px solid #d9b876;background:#fff8e6;border-radius:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <strong style="color:#7a5a18;">Two-factor authentication is required.</strong>
+      <span style="color:#6a5a3a;flex:1;min-width:200px;">Set up 2FA in Security before you can submit time-off or coverage requests.</span>
+      <button type="button" class="primary" id="btn-mfa-nag-open">Set up 2FA</button>
+    </div>
+
     <!-- KPI STRIP -->
     <div class="kpis" id="kpis">
       <div class="kpi"><div class="lbl">My Days Off This Month</div><div class="val" id="kpi-month">0</div><div class="sub">Your approved time away · current month</div></div>
@@ -665,12 +672,12 @@
             <span class="desc">PTO · CME</span>
           </div>
           <div class="legend-item">
-            <span class="chip cat-events" style="margin:0;"><span class="label">Department meeting</span></span>
-            <span class="desc">Notes (shown as title) · Onboarding · Shadowing</span>
+            <span class="chip cat-events" style="margin:0;"><span class="label">Events</span></span>
+            <span class="desc">Holidays · Visitors · Events</span>
           </div>
           <div class="legend-item">
             <span class="chip cat-coverage" style="margin:0;"><span class="type-tag">SWAP</span><span class="label">Mike</span></span>
-            <span class="desc">Per Diem · OT · Swap · General (no tag)</span>
+            <span class="desc">Coverage Adds — OT · PD · Swaps · etc.</span>
           </div>
         </div>
         <div class="legend-block">
@@ -1148,6 +1155,7 @@
       viewMonth: new Date(),     // 1st-of-month for the visible grid
       adminToken: sessionStorage.getItem('admin_token') || null,
       detailEntry: null,
+      mfaEnabled: false,
     };
     state.viewMonth.setDate(1);
     state.viewMonth.setHours(0, 0, 0, 0);
@@ -1243,26 +1251,33 @@
         bindStaticHandlers();
 
         // Auto-elevate to admin if this user is the configured ADMIN_EMAIL.
-        // Skipped silently when we already have a token in sessionStorage.
-        if (!state.adminToken) {
-          try {
-            const r = await fetch('/api/admin-verify', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${state.session.access_token}`,
-              },
-              body: '{}',
-            });
-            if (r.ok) {
-              const j = await r.json().catch(() => ({}));
-              if (j.token) {
-                state.adminToken = j.token;
-                sessionStorage.setItem('admin_token', j.token);
-              }
-            }
-          } catch {}
+        // Runs every init so the token can't go stale across day boundaries.
+        try {
+          const r = await fetch('/api/admin-verify', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${state.session.access_token}`,
+            },
+            body: '{}',
+          });
+          const j = await r.json().catch(() => ({}));
+          if (r.ok && j.token) {
+            state.adminToken = j.token;
+            sessionStorage.setItem('admin_token', j.token);
+          } else if (j.error) {
+            console.info('auto-admin skipped:', j.error);
+          }
+        } catch (err) {
+          console.warn('auto-admin failed:', err);
         }
+
+        // Check whether this user has a verified MFA factor. Drives the
+        // 2FA-required gate on submitting requests.
+        try {
+          const { data: factors } = await state.supabase.auth.mfa.listFactors();
+          state.mfaEnabled = (factors?.totp || []).some(f => f.status === 'verified');
+        } catch { state.mfaEnabled = false; }
 
         refreshAdminUi();
         renderAll();
@@ -1356,6 +1371,10 @@
       document.getElementById('admin-badge').hidden = !isAdmin;
       document.getElementById('btn-add-entry').hidden = !isAdmin;
       document.getElementById('admin-panel').hidden = !isAdmin;
+      const nag = document.getElementById('mfa-nag');
+      if (nag) nag.hidden = !!state.mfaEnabled;
+      const reqBtn = document.getElementById('btn-request');
+      if (reqBtn) reqBtn.title = state.mfaEnabled ? '' : 'Enable 2FA in Security first';
       if (isAdmin) refreshPendingMembersBadge();
     }
 
@@ -1385,6 +1404,8 @@
       document.getElementById('btn-signout').onclick   = signOut;
       document.getElementById('btn-admin-signout').onclick = endAdminSession;
       document.getElementById('btn-security').onclick           = openSecurityModal;
+      const mfaNagBtn = document.getElementById('btn-mfa-nag-open');
+      if (mfaNagBtn) mfaNagBtn.onclick = openSecurityModal;
       document.getElementById('btn-security-close').onclick     = () => closeModal('security-backdrop');
       document.getElementById('btn-security-cancel-enroll').onclick = cancelEnroll;
       document.getElementById('btn-security-verify').onclick    = verifyEnroll;
@@ -1720,6 +1741,12 @@
      * REQUEST FLOW (member)
      * ============================================================ */
     function openRequestModal() {
+      // Hard gate: must enable 2FA before submitting any requests.
+      if (!state.mfaEnabled) {
+        toast('Enable two-factor authentication before submitting requests.', 'error');
+        openSecurityModal();
+        return;
+      }
       const t = ymd(new Date());
       document.getElementById('req-type').value = 'pto';
       document.getElementById('req-start').value = t;
@@ -2516,6 +2543,8 @@
           const factorId = btn.dataset.factorId;
           const { error } = await state.supabase.auth.mfa.unenroll({ factorId });
           if (error) throw error;
+          state.mfaEnabled = false;
+          refreshAdminUi();
           msg.style.color = 'var(--pos)';
           msg.textContent = '2FA disabled.';
           setTimeout(openSecurityModal, 600);
@@ -2549,6 +2578,8 @@
           const uid = state.session?.user?.id || '';
           if (uid) localStorage.setItem(`mfa_grace_until:${uid}`, String(Date.now() + 24 * 60 * 60 * 1000));
         } catch {}
+        state.mfaEnabled = true;
+        refreshAdminUi();
         msg.style.color = 'var(--pos)';
         msg.textContent = '2FA enabled. You\'ll be asked for a code about once a day from this device.';
         setTimeout(openSecurityModal, 800);
