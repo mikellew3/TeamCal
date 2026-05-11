@@ -206,11 +206,12 @@ a matching `team_members` row. So Mike needs both:
 
 For Time Away submissions only (Events / Coverage Adds bypass).
 
-| Range     | Other members already off on any day (approved or pending) | Result                |
+| Range     | Other members already off (approved or pending)            | Result                |
 | --------- | ---------------------------------------------------------- | --------------------- |
 | Any range | 0 on every day                                             | OK → pending (clear)  |
-| Any range | exactly 1 on one or more days                              | OK → pending (watch)  |
-| Any range | ≥ 2 on any single day                                      | **Blocked**           |
+| Any range | ≥ 1 other off on ≥ 2 *consecutive* days                    | **Blocked**           |
+| Any range | ≥ 2 others off on any single day                           | **Blocked**           |
+| Any range | ≥ 1 other off on isolated non-consecutive days only        | OK → pending (watch) — **note required** |
 
 The same member submitting twice doesn't block themselves.
 

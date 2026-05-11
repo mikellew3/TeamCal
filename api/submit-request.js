@@ -76,6 +76,16 @@ export default async function handler(req, res) {
       blocked_days: verdict.blockedDays,
     });
   }
+  // Watch state: require a note explaining the overlap.
+  if (verdict.state === 'watch' && verdict.requiresNote) {
+    const note = (typeof notes === 'string') ? notes.trim() : '';
+    if (!note) {
+      return send(res, 400, {
+        error: 'note_required',
+        detail: 'A note is required when overlapping with another member.',
+      });
+    }
+  }
 
   const insert = await supa
     .from('calendar_entries')

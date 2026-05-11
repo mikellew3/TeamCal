@@ -197,11 +197,31 @@ export async function timeAwayConflicts(supabase, requesterId, startDate, endDat
 }
 
 export function classifyConflict(dayCounts) {
-  const blocked = dayCounts.filter(d => d.others_off >= 2);
-  if (blocked.length > 0) return { state: 'block', reason: 'two_off', blockedDays: blocked };
+  // Hard block #1: any single day where ≥2 other members are already off.
+  const twoOff = dayCounts.filter(d => d.others_off >= 2);
+  if (twoOff.length > 0) return { state: 'block', reason: 'two_off', blockedDays: twoOff };
+
+  // Hard block #2: two or more *consecutive* days where ≥1 other is off.
+  let runStart = -1, longestRun = 0, longestStart = -1;
+  for (let i = 0; i < dayCounts.length; i++) {
+    if (dayCounts[i].others_off >= 1) {
+      if (runStart === -1) runStart = i;
+      const runLen = i - runStart + 1;
+      if (runLen > longestRun) { longestRun = runLen; longestStart = runStart; }
+    } else {
+      runStart = -1;
+    }
+  }
+  if (longestRun >= 2) {
+    const blockedDays = dayCounts.slice(longestStart, longestStart + longestRun);
+    return { state: 'block', reason: 'consecutive_overlap', blockedDays };
+  }
+
+  // Soft warning: exactly one day with someone else off.
   const overlap = dayCounts.filter(d => d.others_off >= 1);
   if (overlap.length > 0) {
-    return { state: 'watch', reason: 'single_overlap', blockedDays: overlap };
+    return { state: 'watch', reason: 'single_day_overlap', blockedDays: overlap, requiresNote: true };
   }
+
   return { state: 'clear', reason: null, blockedDays: [] };
 }

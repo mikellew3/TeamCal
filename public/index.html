@@ -1397,6 +1397,7 @@
       reqEnd.addEventListener('change', updatePreview);
       reqType.addEventListener('change', () => { updateReqConfVisibility(); updatePreview(); });
       reqConf.addEventListener('input', updatePreview);
+      document.getElementById('req-notes').addEventListener('input', updatePreview);
       reqForm.addEventListener('submit', submitRequest);
 
       // Admin login form
@@ -1745,17 +1746,34 @@
         day:d, count:offByDay.get(d).size,
         names:Array.from(offByDay.get(d).values()).sort()
       }));
-      const blocked = dayCounts.filter(d => d.count >= 2);
+      const twoOff = dayCounts.filter(d => d.count >= 2);
+
+      // Find the longest run of consecutive days with at least one other off.
+      let runStart = -1, longestRun = 0, longestStart = -1;
+      for (let i = 0; i < dayCounts.length; i++) {
+        if (dayCounts[i].count >= 1) {
+          if (runStart === -1) runStart = i;
+          const runLen = i - runStart + 1;
+          if (runLen > longestRun) { longestRun = runLen; longestStart = runStart; }
+        } else {
+          runStart = -1;
+        }
+      }
+      const consecutiveRun = longestRun >= 2 ? dayCounts.slice(longestStart, longestStart + longestRun) : [];
       const overlap = dayCounts.filter(d => d.count >= 1);
 
-      let state_, html;
-      if (blocked.length > 0) {
+      let state_, html, requiresNote = false;
+      if (twoOff.length > 0) {
         state_ = 'block';
-        html = `<div class="icon">✕</div><div><strong>Blocked.</strong> Two or more team members are already off on these days:<ul>${blocked.map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml(b.names.join(', '))}</li>`).join('')}</ul></div>`;
+        html = `<div class="icon">✕</div><div><strong>Blocked.</strong> Two or more team members are already off on these days:<ul>${twoOff.map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml(b.names.join(', '))}</li>`).join('')}</ul></div>`;
+      } else if (consecutiveRun.length > 0) {
+        state_ = 'block';
+        html = `<div class="icon">✕</div><div><strong>Blocked.</strong> ${consecutiveRun.length} consecutive days overlap with another team member's time off:<ul>${consecutiveRun.map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml(b.names.join(', '))}</li>`).join('')}</ul></div>`;
       } else if (overlap.length > 0) {
         state_ = 'watch';
-        const label = overlap.length === 1 ? 'One day already has someone off' : 'Some days already have someone off';
-        html = `<div class="icon">!</div><div><strong>${label}.</strong> Submission allowed; admin will decide.<ul>${overlap.map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml(b.names.join(', '))}</li>`).join('')}</ul></div>`;
+        requiresNote = true;
+        const dayLabel = overlap.length === 1 ? 'On 1 day' : `On ${overlap.length} non-consecutive days`;
+        html = `<div class="icon">!</div><div><strong>Heads up — overlap.</strong> ${dayLabel}, another team member is also off:<ul>${overlap.map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml(b.names.join(', '))}</li>`).join('')}</ul><div style="margin-top:6px;font-size:11px;">A note explaining the overlap is required to submit.</div></div>`;
       } else {
         state_ = 'clear';
         html = `<div class="icon">✓</div><div><strong>All clear.</strong> No conflicts on the requested ${days.length === 1 ? 'day' : 'days'}.</div>`;
@@ -1763,10 +1781,14 @@
       previewEl.hidden = false;
       previewEl.className = `conflict-preview ${state_}`;
       previewEl.innerHTML = html;
+
+      const notesEl = document.getElementById('req-notes');
+      notesEl.dataset.required = requiresNote ? '1' : '';
+      const noteOk = !requiresNote || (notesEl.value || '').trim().length > 0;
       const isCme = document.getElementById('req-type').value === 'cme';
       const conf  = document.getElementById('req-conf').value.trim();
       const cmeBad = isCme && !isValidHttpUrl(conf);
-      submitBtn.disabled = (state_ === 'block') || cmeBad;
+      submitBtn.disabled = (state_ === 'block') || cmeBad || !noteOk;
     }
 
     async function submitRequest(ev) {
@@ -1805,6 +1827,12 @@
           const items = (j.blocked_days || []).map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml((b.names || []).join(', '))}</li>`).join('');
           previewEl.innerHTML = `<div class="icon">✕</div><div><strong>Server rejected request.</strong>${items ? `<ul>${items}</ul>` : ''}</div>`;
           btn.disabled = true;
+          return;
+        }
+        if (r.status === 400 && j.error === 'note_required') {
+          toast('A note is required for this request.', 'error');
+          document.getElementById('req-notes').focus();
+          btn.disabled = false;
           return;
         }
         if (!r.ok) throw new Error(j.error || 'failed');
