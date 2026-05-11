@@ -23,17 +23,34 @@ function configure() {
 //
 // Returns silently on configuration / DB issues so the caller never crashes.
 export async function sendPush({ recipientType, memberId, payload }) {
-  if (!configure()) return { sent: 0, reason: 'vapid_not_configured' };
+  if (!configure()) {
+    console.warn('[push] skipped: VAPID not configured');
+    return { sent: 0, reason: 'vapid_not_configured' };
+  }
   let supa;
-  try { supa = serviceClient(); } catch { return { sent: 0, reason: 'no_supabase' }; }
+  try { supa = serviceClient(); } catch {
+    console.warn('[push] skipped: no supabase client');
+    return { sent: 0, reason: 'no_supabase' };
+  }
 
   let q = supa.from('push_subscriptions').select('*');
   if (recipientType === 'admin') q = q.eq('is_admin', true);
   else if (recipientType === 'member' && memberId) q = q.eq('member_id', memberId);
-  else return { sent: 0, reason: 'no_recipient' };
+  else {
+    console.warn('[push] skipped: no recipient', { recipientType, memberId });
+    return { sent: 0, reason: 'no_recipient' };
+  }
 
   const { data: subs, error } = await q;
-  if (error || !subs?.length) return { sent: 0 };
+  if (error) {
+    console.error('[push] sub lookup failed', error);
+    return { sent: 0, reason: 'db_error' };
+  }
+  if (!subs?.length) {
+    console.warn('[push] no matching subscriptions', { recipientType, memberId });
+    return { sent: 0, reason: 'no_subscriptions' };
+  }
+  console.log(`[push] dispatching to ${subs.length} subscription(s)`, { recipientType, memberId });
 
   const body = JSON.stringify(payload || {});
   const results = await Promise.allSettled(
@@ -55,7 +72,9 @@ export async function sendPush({ recipientType, memberId, payload }) {
   });
   if (expired.length) {
     await supa.from('push_subscriptions').delete().in('endpoint', expired);
+    console.warn(`[push] removed ${expired.length} expired subscription(s)`);
   }
+  console.log(`[push] result`, { sent, expired: expired.length, total: subs.length });
   // Best-effort touch last_used_at for non-expired subs.
   const aliveEndpoints = subs.filter(s => !expired.includes(s.endpoint)).map(s => s.endpoint);
   if (aliveEndpoints.length) {
