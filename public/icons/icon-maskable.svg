@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MG Surgical Associates">
+  <rect width="512" height="512" fill="#1f6b6b"/>
+  <!-- Content kept inside the maskable safe zone (≥10% padding from each edge) -->
+  <g fill="#ffffff" opacity="0.55">
+    <circle cx="168" cy="168" r="18"/>
+    <circle cx="344" cy="168" r="18"/>
+    <circle cx="168" cy="344" r="18"/>
+    <circle cx="344" cy="344" r="18"/>
+  </g>
+  <g stroke="#ffffff" stroke-width="18" stroke-linecap="round" fill="none">
+    <circle cx="256" cy="256" r="74"/>
+    <line x1="256" y1="170" x2="256" y2="210"/>
+    <line x1="256" y1="302" x2="256" y2="342"/>
+    <line x1="170" y1="256" x2="210" y2="256"/>
+    <line x1="302" y1="256" x2="342" y2="256"/>
+  </g>
+  <circle cx="256" cy="256" r="11" fill="#ffffff"/>
+</svg>

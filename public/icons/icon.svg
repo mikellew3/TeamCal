@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MG Surgical Associates">
+  <rect width="512" height="512" rx="96" fill="#1f6b6b"/>
+  <!-- Calendar-grid corner dots -->
+  <g fill="#ffffff" opacity="0.55">
+    <circle cx="120" cy="120" r="22"/>
+    <circle cx="392" cy="120" r="22"/>
+    <circle cx="120" cy="392" r="22"/>
+    <circle cx="392" cy="392" r="22"/>
+  </g>
+  <!-- Precision crosshair -->
+  <g stroke="#ffffff" stroke-width="22" stroke-linecap="round" fill="none">
+    <circle cx="256" cy="256" r="92"/>
+    <line x1="256" y1="148" x2="256" y2="200"/>
+    <line x1="256" y1="312" x2="256" y2="364"/>
+    <line x1="148" y1="256" x2="200" y2="256"/>
+    <line x1="312" y1="256" x2="364" y2="256"/>
+  </g>
+  <!-- Center dot -->
+  <circle cx="256" cy="256" r="14" fill="#ffffff"/>
+</svg>
