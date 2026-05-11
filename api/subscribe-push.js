@@ -32,6 +32,11 @@ export default async function handler(req, res) {
     const member = await resolveMember(supa, userData.user);
     if (!member) return send(res, 403, { error: 'not_a_team_member' });
     memberId = member.id;
+    // Dual-flag the row when the subscriber is also the admin so they
+    // receive admin pings (new requests) alongside their own member pings.
+    const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase();
+    const userEmail  = (userData.user.email || '').toLowerCase();
+    if (adminEmail && userEmail && userEmail === adminEmail) isAdmin = true;
   }
 
   // Upsert by endpoint (one row per device).

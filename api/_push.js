@@ -29,7 +29,7 @@ export async function sendPush({ recipientType, memberId, payload }) {
 
   let q = supa.from('push_subscriptions').select('*');
   if (recipientType === 'admin') q = q.eq('is_admin', true);
-  else if (recipientType === 'member' && memberId) q = q.eq('member_id', memberId).eq('is_admin', false);
+  else if (recipientType === 'member' && memberId) q = q.eq('member_id', memberId);
   else return { sent: 0, reason: 'no_recipient' };
 
   const { data: subs, error } = await q;
