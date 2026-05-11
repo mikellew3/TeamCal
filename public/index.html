@@ -1300,12 +1300,17 @@
       try {
         const r = await fetch('/api/env');
         if (!r.ok) {
-          showFatal(`Could not load /api/env (HTTP ${r.status}). Is the project deployed with the API routes? If running locally, use \`vercel dev\`.`);
+          console.error('init: /api/env returned', r.status);
+          showFatal("Calendar isn't available right now. Try refreshing in a minute. If it keeps happening, message Admin.");
           return;
         }
         let env;
         try { env = await r.json(); }
-        catch { showFatal('Got a non-JSON response from /api/env.'); return; }
+        catch (e) {
+          console.error('init: /api/env non-JSON response', e);
+          showFatal("Calendar isn't available right now. Try refreshing. If it keeps happening, message Admin.");
+          return;
+        }
         if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
           showFatal("Calendar isn't available right now. Try refreshing in a few minutes. If it keeps happening, message Admin.");
           return;
@@ -1428,10 +1433,10 @@
         document.body.appendChild(box);
       }
       box.innerHTML = `
-        <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#b54545;font-weight:600;margin-bottom:6px;">Configuration Error</div>
-        <h1 style="font-family:'Source Serif 4',serif;font-size:22px;font-weight:600;margin:0 0 12px;">Calendar can't load</h1>
+        <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#b54545;font-weight:600;margin-bottom:6px;">Heads up</div>
+        <h1 style="font-family:'Source Serif 4',serif;font-size:22px;font-weight:600;margin:0 0 12px;">Calendar isn't available</h1>
         <p style="font-size:13px;line-height:1.5;color:#3a4a52;margin:0 0 16px;">${escapeFatal(msg)}</p>
-        <p style="font-size:12px;color:#6b7780;margin:0;">If this is your first deploy, see the README for setup steps.</p>
+        <p style="font-size:12px;color:#6b7780;margin:0;">If you keep seeing this, message Admin (mllewellyn1@mgh.harvard.edu).</p>
       `;
     }
     function escapeFatal(s) {
