@@ -514,17 +514,6 @@
     }
     .day-overview-empty .helper { font-size:12px;color:var(--muted);margin-top:4px; }
 
-    /* ============ PUSH ENABLE PROMPT ============ */
-    .push-prompt {
-      background:var(--accent-soft);border:1px solid var(--accent);
-      border-radius:2px;padding:10px 14px;margin-bottom:14px;
-      display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
-      font-size:12px;color:var(--ink);
-    }
-    .push-prompt .left { display:flex;align-items:center;gap:8px;min-width:0; }
-    .push-prompt .left strong { color:var(--accent); }
-    .push-prompt button { white-space:nowrap; }
-
     /* ============ ADMIN ADD NOTICE ============ */
     .admin-add-notice {
       background:#f5ecd9;border-left:3px solid var(--warn);
@@ -536,16 +525,6 @@
     body.is-offline .footer #sync-status { color:var(--neg);font-weight:600; }
     body.is-offline button.disable-when-offline { opacity:0.4;pointer-events:none; }
 
-    /* ============ INSTALL PROMPT (iOS) ============ */
-    .install-tip {
-      background:var(--paper-warm);border:1px solid var(--line);
-      padding:8px 12px;border-radius:2px;font-size:11px;color:var(--muted);
-      margin-bottom:12px;display:flex;align-items:center;gap:8px;justify-content:space-between;
-    }
-    .install-tip button {
-      font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
-      padding:4px 8px;border-color:var(--line-strong);
-    }
 
     /* ============ CONFERENCE LINK IN DETAIL ============ */
     .conf-link a { color:var(--accent);text-decoration:underline;word-break:break-all; }
@@ -611,24 +590,6 @@
       <div class="kpi"><div class="lbl">Pending Requests</div><div class="val" id="kpi-pending">0</div><div class="sub" id="kpi-pending-sub">Awaiting decision</div></div>
       <div class="kpi"><div class="lbl">Your PTO YTD</div><div class="val" id="kpi-mypto">0</div><div class="sub">Approved PTO days year-to-date</div></div>
       <div class="kpi"><div class="lbl">Off Today</div><div class="val names" id="kpi-offtoday"><span class="count">0</span><span id="kpi-offtoday-names">No one off today</span></div></div>
-    </div>
-
-    <!-- PUSH ENABLE PROMPT -->
-    <div class="push-prompt" id="push-prompt" hidden>
-      <div class="left">
-        <strong>Notifications</strong>
-        <span id="push-prompt-text">Enable push notifications so you hear about request updates instantly.</span>
-      </div>
-      <div>
-        <button class="primary" id="btn-push-enable">Enable</button>
-        <button class="ghost" id="btn-push-dismiss">Not now</button>
-      </div>
-    </div>
-
-    <!-- INSTALL TO HOME SCREEN TIP (iOS only — no install prompt API) -->
-    <div class="install-tip" id="install-tip" hidden>
-      <span><strong style="color:var(--ink);">Install:</strong> tap the Share button → Add to Home Screen for the full app experience.</span>
-      <button class="ghost" id="btn-install-dismiss">Got it</button>
     </div>
 
     <!-- ADMIN PANEL -->
@@ -1222,12 +1183,6 @@
         // Register service worker (PWA shell + push receiver).
         registerServiceWorker();
 
-        // Show iOS install tip if launched in browser tab on iPhone/iPad.
-        maybeShowInstallTip();
-
-        // Decide whether to surface the push-enable prompt.
-        maybeShowPushPrompt();
-
         // ?entry={id} on URL → auto-open detail when entry exists.
         autoOpenEntryFromUrl();
 
@@ -1396,17 +1351,6 @@
       // Day Overview close
       document.getElementById('btn-day-overview-close').onclick = () => closeModal('day-overview-backdrop');
 
-      // Push prompt
-      document.getElementById('btn-push-enable').onclick   = enablePush;
-      document.getElementById('btn-push-dismiss').onclick  = () => {
-        sessionStorage.setItem('push_dismissed', '1');
-        document.getElementById('push-prompt').hidden = true;
-      };
-      document.getElementById('btn-install-dismiss').onclick = () => {
-        localStorage.setItem('install_tip_dismissed', '1');
-        document.getElementById('install-tip').hidden = true;
-      };
-
       // Detail action buttons
       document.getElementById('btn-detail-approve').onclick = () => decideEntry('approved');
       document.getElementById('btn-detail-deny').onclick    = () => decideEntry('denied');
@@ -1478,8 +1422,10 @@
       const yearEnd   = `${new Date().getFullYear()}-12-31`;
       let myMonthDays = 0, pending = 0, myYTD = 0;
 
+      const isAdmin = isAdminMode();
       for (const e of state.entries) {
-        if (e.status === 'pending') pending++;
+        // Pending KPI: admin sees all, members only see their own.
+        if (e.status === 'pending' && (isAdmin || e.member_id === state.me.id)) pending++;
         if (TIME_AWAY_TYPES.includes(e.event_type) && e.member_id === state.me.id && e.status === 'approved') {
           myMonthDays += daysOverlap(e.start_date, e.end_date, monthStart, monthEnd);
           if (e.event_type === 'pto') {
@@ -1997,19 +1943,6 @@
     }
 
     /* ============================================================
-     * Install tip (iOS only — no beforeinstallprompt on iOS)
-     * ============================================================ */
-    function maybeShowInstallTip() {
-      if (localStorage.getItem('install_tip_dismissed') === '1') return;
-      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-                        || window.navigator.standalone === true;
-      if (isIos && !isStandalone) {
-        document.getElementById('install-tip').hidden = false;
-      }
-    }
-
-    /* ============================================================
      * URL ?entry={id} — auto-open detail
      * ============================================================ */
     function autoOpenEntryFromUrl() {
@@ -2022,87 +1955,6 @@
       const url = new URL(window.location.href);
       url.searchParams.delete('entry');
       window.history.replaceState({}, '', url.toString());
-    }
-
-    /* ============================================================
-     * PUSH NOTIFICATIONS
-     * ============================================================ */
-    function maybeShowPushPrompt() {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-      if (!state.vapidPublicKey) return;
-      if (Notification.permission === 'denied') return;
-      if (sessionStorage.getItem('push_dismissed') === '1') return;
-      // If permission is already granted AND we have an active subscription,
-      // don't nag.
-      if (Notification.permission === 'granted') {
-        navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription())
-          .then(sub => {
-            if (!sub) document.getElementById('push-prompt').hidden = false;
-          });
-      } else {
-        document.getElementById('push-prompt').hidden = false;
-      }
-    }
-
-    async function enablePush() {
-      const btn = document.getElementById('btn-push-enable');
-      btn.disabled = true;
-      try {
-        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-          toast('Push not supported on this browser.', 'error');
-          return;
-        }
-        if (!state.vapidPublicKey) {
-          toast('Server not configured for push (VAPID keys missing).', 'error');
-          return;
-        }
-        const perm = await Notification.requestPermission();
-        if (perm !== 'granted') {
-          toast('Notifications blocked. Enable them in your browser settings.', 'error');
-          return;
-        }
-        const reg = await navigator.serviceWorker.ready;
-        let sub = await reg.pushManager.getSubscription();
-        if (!sub) {
-          sub = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(state.vapidPublicKey),
-          });
-        }
-        // Subscribe both as member AND admin if currently in admin mode.
-        const memberRes = await fetch('/api/subscribe-push', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${state.session.access_token}`,
-          },
-          body: JSON.stringify({ subscription: sub.toJSON(), scope: 'member' }),
-        });
-        if (!memberRes.ok) throw new Error('member subscribe failed');
-        if (isAdminMode()) {
-          await fetch('/api/subscribe-push', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ subscription: sub.toJSON(), scope: 'admin', admin_token: state.adminToken }),
-          });
-        }
-        document.getElementById('push-prompt').hidden = true;
-        toast('Notifications enabled.', 'success');
-      } catch (err) {
-        console.error('enablePush', err);
-        toast('Could not enable notifications.', 'error');
-      } finally {
-        btn.disabled = false;
-      }
-    }
-
-    function urlBase64ToUint8Array(base64String) {
-      const padding = '='.repeat((4 - base64String.length % 4) % 4);
-      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-      const rawData = atob(base64);
-      const outputArray = new Uint8Array(rawData.length);
-      for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-      return outputArray;
     }
 
     /* ============================================================
@@ -2143,9 +1995,6 @@
         closeModal('adminlogin-backdrop');
         refreshAdminUi();
         renderAll();
-        // Re-show push prompt if not yet subscribed for admin scope.
-        document.getElementById('push-prompt').hidden = false;
-        sessionStorage.removeItem('push_dismissed');
         toast('Admin session active.', 'success');
       } catch (err) {
         console.error(err);
@@ -2681,8 +2530,19 @@
       if (end < start) return 0;
       return expandRange(start, end).length;
     }
+    // Visibility rule: pending and denied are hidden from members who are
+    // neither the owner nor admin. Admin sees everything. Owners see their own.
+    // Conflict checks still use raw state.entries so people can't double-book
+    // around someone else's pending request silently.
+    function visibleToMe(e) {
+      if (e.status === 'approved') return true;
+      if (isAdminMode()) return true;
+      if (state.me && e.member_id === state.me.id) return true;
+      return false;
+    }
+
     function entriesOn(dayStr) {
-      return state.entries.filter(e => dayStr >= e.start_date && dayStr <= e.end_date);
+      return state.entries.filter(e => dayStr >= e.start_date && dayStr <= e.end_date && visibleToMe(e));
     }
     function formatDayShort(iso) {
       const d = new Date(`${iso}T00:00:00`);
