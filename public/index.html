@@ -1413,12 +1413,26 @@
       updateAddCmeAndStatusVisibility();
       document.getElementById('add-form').addEventListener('submit', submitAdminCreate);
 
+      // Auto-fill end date from start date (Add modal).
+      const addStart = document.getElementById('add-start');
+      const addEnd   = document.getElementById('add-end');
+      addStart.addEventListener('change', () => {
+        if (!addEnd.value || addEnd.value < addStart.value) addEnd.value = addStart.value;
+      });
+
       // Admin edit form
       const editCat = document.getElementById('edit-category');
       const editTypeEl = document.getElementById('edit-type');
       editCat.addEventListener('change', () => { populateTypeSelect('edit-category', 'edit-type'); updateEditCmeAndStatusVisibility(); });
       editTypeEl.addEventListener('change', updateEditCmeAndStatusVisibility);
       populateMemberSelect('edit-member', true);
+
+      // Auto-fill end date from start date (Edit modal).
+      const editStart = document.getElementById('edit-start');
+      const editEnd   = document.getElementById('edit-end');
+      editStart.addEventListener('change', () => {
+        if (!editEnd.value || editEnd.value < editStart.value) editEnd.value = editStart.value;
+      });
       document.getElementById('edit-form').addEventListener('submit', submitAdminEdit);
 
       // Day Overview close
