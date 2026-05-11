@@ -83,7 +83,7 @@ export default async function handler(req, res) {
       sendPush({
         recipientType: 'member',
         memberId: entry.member_id,
-        payload: { title, body: bodyTxt, tag: `dec-${id}`, entryId: id, url: `/index.html?entry=${id}` },
+        payload: { title, body: bodyTxt, tag: `dec-${id}`, entryId: id, url: `/index.html?entry=${id}`, badge_count: 1 },
       }).catch(err => console.error('push member', err));
     }
 

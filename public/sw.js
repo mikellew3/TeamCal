@@ -5,7 +5,7 @@
 //   - Static assets (icons, manifest, fonts): cache-first.
 // Bump CACHE_VERSION on any breaking change to force a refresh on all clients.
 
-const CACHE_VERSION = 'pa-cal-v17';
+const CACHE_VERSION = 'pa-cal-v18';
 const SHELL = [
   '/index.html',
   '/login.html',
@@ -90,7 +90,12 @@ self.addEventListener('push', (event) => {
     requireInteraction: false,
     renotify: true,
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  const tasks = [self.registration.showNotification(title, options)];
+  // iOS / desktop home-screen badge. Supported in iOS 16.4+ PWAs.
+  if (typeof data.badge_count === 'number' && 'setAppBadge' in self.navigator) {
+    tasks.push(self.navigator.setAppBadge(data.badge_count).catch(() => {}));
+  }
+  event.waitUntil(Promise.all(tasks));
 });
 
 self.addEventListener('notificationclick', (event) => {

@@ -1625,6 +1625,22 @@
       renderCalendar();
       renderLegend();
       renderAdminPanel();
+      updateAppBadge();
+    }
+
+    // Home-screen badge: admins see total pending request count; members
+    // get the badge cleared on every load since seeing the page = read.
+    function updateAppBadge() {
+      try {
+        if (!('setAppBadge' in navigator)) return;
+        if (isAdminMode()) {
+          const pending = state.entries.filter(e => e.status === 'pending').length;
+          if (pending > 0) navigator.setAppBadge(pending).catch(() => {});
+          else navigator.clearAppBadge?.().catch(() => {});
+        } else {
+          navigator.clearAppBadge?.().catch(() => {});
+        }
+      } catch {}
     }
 
     function renderAdminPanel() {
@@ -2228,7 +2244,12 @@
         // Check for updates every 30 min while the app is open, plus on
         // every tab focus — keeps the home-screen icon close to live.
         setInterval(() => { reg.update().catch(() => {}); }, 30 * 60 * 1000);
-        window.addEventListener('focus', () => { reg.update().catch(() => {}); });
+        window.addEventListener('focus', () => {
+          reg.update().catch(() => {});
+          // App came back — sync the badge so it reflects current state
+          // even if a push silently bumped it while we were away.
+          updateAppBadge();
+        });
       } catch (e) {
         console.error('SW register failed', e);
       }

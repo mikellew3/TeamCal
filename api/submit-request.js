@@ -130,6 +130,12 @@ export default async function handler(req, res) {
   const range = formatRange(entry.start_date, entry.end_date);
   const typeLabel = TYPE_LABEL[entry.event_type] || entry.event_type;
 
+  // Total pending requests — used as the iOS home-screen badge count.
+  const { count: pendingCount } = await supa
+    .from('calendar_entries')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending');
+
   // Push admins; await it so we can return the result for debugging.
   let pushResult;
   try {
@@ -141,6 +147,7 @@ export default async function handler(req, res) {
         tag: `req-${entry.id}`,
         entryId: entry.id,
         url: `/index.html?entry=${entry.id}`,
+        badge_count: pendingCount ?? 0,
       },
     });
   } catch (err) {
