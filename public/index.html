@@ -745,7 +745,8 @@
       </table>
       <div class="modal-actions">
         <div class="left" id="detail-admin-actions" hidden>
-          <button class="danger" id="btn-delete">Delete</button>
+          <button class="danger" id="btn-delete">Delete Entry</button>
+          <button class="ghost" id="btn-remove-day" hidden>Remove This Day</button>
         </div>
         <button class="ghost" id="btn-detail-close">Close</button>
         <button class="ghost" id="btn-detail-edit" hidden>Edit</button>
@@ -769,6 +770,7 @@
           <select id="req-type" required>
             <option value="pto">PTO — Paid Time Off</option>
             <option value="cme">CME — Continuing Medical Education</option>
+            <option value="taw">General — swap days, other</option>
           </select>
         </div>
         <div class="field" id="req-conf-field" hidden>
@@ -1157,6 +1159,7 @@
       pto:      { tag:'PTO',      label:'PTO',         category:'time_away' },
       cme:      { tag:'CME',      label:'CME',         category:'time_away' },
       pd:       { tag:'PD',       label:'PD',          category:'time_away' },
+      taw:      { tag:'',         label:'General',     category:'time_away' },
       note:     { tag:'',         label:'Note',        category:'events' },
       onb:      { tag:'ONB',      label:'Onboarding',  category:'events' },
       shd:      { tag:'SHD',      label:'Shadowing',   category:'events' },
@@ -1166,7 +1169,7 @@
       cov:      { tag:'',         label:'General',     category:'coverage_adds' },
     };
     const CATEGORY_TYPES = {
-      time_away:    ['pto', 'cme'],
+      time_away:    ['pto', 'cme', 'taw'],
       events:       ['note', 'onb', 'shd'],
       coverage_adds:['per_diem', 'ot', 'swp', 'cov'],
     };
@@ -1446,6 +1449,7 @@
       document.getElementById('btn-detail-reset').onclick   = () => decideEntry('pending');
       document.getElementById('btn-detail-edit').onclick    = openEditFromDetail;
       document.getElementById('btn-delete').onclick         = deleteEntry;
+      document.getElementById('btn-remove-day').onclick     = removeSingleDay;
 
       // Online/offline detection
       window.addEventListener('online',  updateOnlineState);
@@ -1629,7 +1633,7 @@
         const max = 3;
         const visible = sorted.slice(0, max);
         const hidden = sorted.length - visible.length;
-        for (const e of visible) chips.appendChild(renderChip(e));
+        for (const e of visible) chips.appendChild(renderChip(e, dayStr));
         if (hidden > 0) {
           const more = document.createElement('div');
           more.className = 'cell-more';
@@ -1654,7 +1658,7 @@
       }
     }
 
-    function renderChip(entry) {
+    function renderChip(entry, dayContext) {
       const meta = TYPE_META[entry.event_type] || { tag:'?', label:'?', category:'time_away' };
       const catClass = meta.category === 'time_away' ? 'cat-time-away'
                      : meta.category === 'events'    ? 'cat-events'
@@ -1674,7 +1678,7 @@
         ${member ? `<span class="dot" style="--member-color:${color}"></span>` : ''}
         <span class="label">${escapeHtml(name)}</span>
       `;
-      chip.addEventListener('click', (ev) => { ev.stopPropagation(); openDetail(entry); });
+      chip.addEventListener('click', (ev) => { ev.stopPropagation(); openDetail(entry, dayContext); });
       return chip;
     }
 
@@ -1867,8 +1871,9 @@
     /* ============================================================
      * DETAIL MODAL
      * ============================================================ */
-    function openDetail(entry) {
+    function openDetail(entry, dayContext) {
       state.detailEntry = entry;
+      state.detailDay = dayContext || null;
       const member = entry.member_id ? state.members.find(m => m.id === entry.member_id) : null;
       const meta = TYPE_META[entry.event_type] || {};
       const isTimeAway = meta.category === 'time_away';
@@ -1943,6 +1948,18 @@
       document.getElementById('btn-detail-deny').hidden    = !(showStatusActions && entry.status !== 'denied');
       document.getElementById('btn-detail-reset').hidden   = !(showStatusActions && entry.status !== 'pending');
 
+      // "Remove This Day" — only when admin opened detail from a specific
+      // day cell AND the entry spans more than one day.
+      const removeBtn = document.getElementById('btn-remove-day');
+      const isMultiDay = entry.start_date !== entry.end_date;
+      const showRemoveDay = isAdmin && isMultiDay && state.detailDay
+                            && state.detailDay >= entry.start_date
+                            && state.detailDay <= entry.end_date;
+      removeBtn.hidden = !showRemoveDay;
+      if (showRemoveDay) {
+        removeBtn.textContent = `Remove ${formatDayShort(state.detailDay)}`;
+      }
+
       openModal('detail-backdrop');
     }
 
@@ -2016,7 +2033,7 @@
           }
           row.addEventListener('click', () => {
             closeModal('day-overview-backdrop');
-            setTimeout(() => openDetail(e), 100);
+            setTimeout(() => openDetail(e, dayStr), 100);
           });
           list.appendChild(row);
         }
@@ -2193,6 +2210,41 @@
           } catch (err) {
             console.error(err);
             toast('Delete failed. Try again.', 'error');
+          }
+        },
+      });
+    }
+
+    async function removeSingleDay() {
+      const entry = state.detailEntry;
+      const day = state.detailDay;
+      if (!entry || !day) return;
+      const isSingleDay = entry.start_date === entry.end_date;
+      const isEdge = day === entry.start_date || day === entry.end_date;
+      const action = isSingleDay ? 'Delete this entry' : (isEdge ? 'Trim from the range' : 'Split into two entries around this day');
+      openConfirm({
+        eyebrow: 'Remove Day',
+        title: `Remove ${formatDayShort(day)} from this entry?`,
+        sub: action + '.',
+        bodyHtml: '',
+        confirmText: 'Remove',
+        danger: true,
+        onConfirm: async () => {
+          try {
+            const r = await fetch('/api/admin-update', {
+              method:'POST',
+              headers:{ 'Content-Type':'application/json' },
+              body: JSON.stringify({ token: state.adminToken, id: entry.id, remove_day: day }),
+            });
+            const j = await r.json();
+            if (r.status === 401) { adminTokenExpired(); return; }
+            if (!r.ok) throw new Error(j.error || 'failed');
+            closeModal('detail-backdrop');
+            toast(j.deleted ? 'Entry deleted.' : (j.split ? 'Day removed; entry split.' : 'Day removed.'), 'success');
+            await refresh();
+          } catch (err) {
+            console.error(err);
+            toast('Could not remove day.', 'error');
           }
         },
       });

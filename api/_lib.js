@@ -2,16 +2,17 @@
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
-export const TIME_AWAY_TYPES = ['pto', 'cme'];
+// 'taw' is the generic time-away type — no tag on the chip, free-form title.
+// Used for non-PTO/non-CME absences like swap days.
+export const TIME_AWAY_TYPES = ['pto', 'cme', 'taw'];
 export const EVENT_TYPES     = ['note', 'onb', 'shd'];
-// 'cov' is the new generic coverage type. 'per_diem' and 'swp' remain in the
-// list so legacy rows still load and validate; the UI only offers 'cov' going
-// forward.
+// 'cov' is the generic coverage type. 'per_diem' and 'swp' remain in the
+// list so legacy rows still load and validate.
 export const COVERAGE_TYPES  = ['per_diem', 'ot', 'swp', 'cov'];
 export const ALL_TYPES = [...TIME_AWAY_TYPES, ...EVENT_TYPES, ...COVERAGE_TYPES];
 
 export const TYPE_LABEL = {
-  pto: 'PTO', cme: 'CME',
+  pto: 'PTO', cme: 'CME', taw: 'General',
   note: 'Note', onb: 'Onboarding', shd: 'Shadowing',
   per_diem: 'Per Diem', ot: 'OT', swp: 'Swap', cov: 'General',
 };
