@@ -2014,11 +2014,7 @@
           return;
         }
         if (!r.ok) throw new Error(j.error || 'failed');
-        const push = j.push || {};
-        let pushMsg = '';
-        if (push.reason) pushMsg = ` Push: ${push.reason}.`;
-        else if (typeof push.sent === 'number') pushMsg = ` Pushed to ${push.sent} device${push.sent === 1 ? '' : 's'}.`;
-        toast('Request submitted — Mike has been notified.' + pushMsg, 'success');
+        toast('Request submitted — Mike has been notified.', 'success');
         closeModal('request-backdrop');
         await refresh();
       } catch (err) {
@@ -2843,7 +2839,19 @@
           setTimeout(openNotifModal, 1800);
         } else if (mode === 'disable') {
           const existing = await reg.pushManager.getSubscription();
-          if (existing) await existing.unsubscribe().catch(() => {});
+          if (existing) {
+            // Tell the server first so the row is gone even if the local
+            // unsubscribe call fails midway through.
+            await fetch('/api/subscribe-push', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.session.access_token}`,
+              },
+              body: JSON.stringify({ unsubscribe: true, endpoint: existing.endpoint }),
+            }).catch(() => {});
+            await existing.unsubscribe().catch(() => {});
+          }
           msg.style.color = 'var(--pos)';
           msg.textContent = 'Notifications disabled on this device.';
           setTimeout(openNotifModal, 600);

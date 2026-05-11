@@ -9,13 +9,26 @@ export default async function handler(req, res) {
   if (!methodGuard(req, res, ['POST'])) return;
 
   const body = await readJson(req);
+  const supa = serviceClient();
+
+  // Unsubscribe path: delete the row for a given endpoint. Requires JWT so a
+  // stranger can't enumerate / delete arbitrary endpoints.
+  if (body?.unsubscribe && typeof body?.endpoint === 'string') {
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'] || '';
+    const jwt = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    if (!jwt) return send(res, 401, { error: 'missing_token' });
+    const { data: userData, error } = await supa.auth.getUser(jwt);
+    if (error || !userData?.user) return send(res, 401, { error: 'invalid_token' });
+    await supa.from('push_subscriptions').delete().eq('endpoint', body.endpoint);
+    return send(res, 200, { ok: true });
+  }
+
   const sub = body?.subscription;
   if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) {
     return send(res, 400, { error: 'invalid_subscription' });
   }
 
   const ua = (req.headers['user-agent'] || '').slice(0, 256);
-  const supa = serviceClient();
 
   let memberId = null;
   let isAdmin = false;
