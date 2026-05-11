@@ -708,7 +708,6 @@
       </div>
       <div style="display:flex;gap:8px;">
         <button class="ghost" id="btn-manage-members">Manage Members</button>
-        <button class="ghost" id="btn-admin-signout">End Admin Session</button>
       </div>
     </div>
 
@@ -1507,7 +1506,6 @@
       document.getElementById('btn-add-entry').onclick = openAddModal;
       document.getElementById('btn-admin').onclick     = openAdminLogin;
       document.getElementById('btn-signout').onclick   = signOut;
-      document.getElementById('btn-admin-signout').onclick = endAdminSession;
       document.getElementById('admin-pending-trigger').onclick = openPendingModal;
       document.getElementById('btn-pending-close').onclick    = () => closeModal('pending-backdrop');
       document.getElementById('btn-security').onclick           = openSecurityModal;
