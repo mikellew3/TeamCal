@@ -51,13 +51,18 @@ export default async function handler(req, res) {
       user_agent: ua,
       last_used_at: new Date().toISOString(),
     }, { onConflict: 'endpoint' })
-    .select('id')
+    .select('id, member_id, is_admin')
     .single();
   if (error) {
     console.error('subscribe-push', error);
     return send(res, 500, { error: 'server_error' });
   }
-  return send(res, 200, { id: data.id });
+  return send(res, 200, {
+    id: data.id,
+    is_admin: data.is_admin,
+    member_id: data.member_id,
+    admin_email_configured: !!process.env.ADMIN_EMAIL,
+  });
 }
 
 async function resolveMember(supa, user) {

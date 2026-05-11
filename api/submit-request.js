@@ -130,22 +130,28 @@ export default async function handler(req, res) {
   const range = formatRange(entry.start_date, entry.end_date);
   const typeLabel = TYPE_LABEL[entry.event_type] || entry.event_type;
 
-  // Fire-and-forget admin notifications: push + email.
-  sendPush({
-    recipientType: 'admin',
-    payload: {
-      title: `New ${typeLabel} request`,
-      body: `${member.name} requested ${days} day${days === 1 ? '' : 's'} — ${range}`,
-      tag: `req-${entry.id}`,
-      entryId: entry.id,
-      url: `/index.html?entry=${entry.id}`,
-    },
-  }).catch(err => console.error('push admin', err));
+  // Push admins; await it so we can return the result for debugging.
+  let pushResult;
+  try {
+    pushResult = await sendPush({
+      recipientType: 'admin',
+      payload: {
+        title: `New ${typeLabel} request`,
+        body: `${member.name} requested ${days} day${days === 1 ? '' : 's'} — ${range}`,
+        tag: `req-${entry.id}`,
+        entryId: entry.id,
+        url: `/index.html?entry=${entry.id}`,
+      },
+    });
+  } catch (err) {
+    console.error('push admin', err);
+    pushResult = { sent: 0, reason: 'exception', error: String(err?.message || err) };
+  }
 
   sendAdminEmail({ memberName: member.name, typeLabel, days, range, notes: entry.notes })
     .catch(err => console.error('email admin', err));
 
-  return send(res, 200, { id: entry.id, entry, watch: verdict.state === 'watch' });
+  return send(res, 200, { id: entry.id, entry, watch: verdict.state === 'watch', push: pushResult });
 }
 
 async function sendAdminEmail({ memberName, typeLabel, days, range, notes }) {

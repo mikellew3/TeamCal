@@ -1998,7 +1998,11 @@
           return;
         }
         if (!r.ok) throw new Error(j.error || 'failed');
-        toast('Request submitted — Mike has been notified.', 'success');
+        const push = j.push || {};
+        let pushMsg = '';
+        if (push.reason) pushMsg = ` Push: ${push.reason}.`;
+        else if (typeof push.sent === 'number') pushMsg = ` Pushed to ${push.sent} device${push.sent === 1 ? '' : 's'}.`;
+        toast('Request submitted — Mike has been notified.' + pushMsg, 'success');
         closeModal('request-backdrop');
         await refresh();
       } catch (err) {
@@ -2804,13 +2808,18 @@
             },
             body: JSON.stringify({ scope: 'member', subscription: sub.toJSON() }),
           });
-          if (!r.ok) {
-            const j = await r.json().catch(() => ({}));
-            throw new Error(j.error || 'subscribe failed');
-          }
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || 'subscribe failed');
           msg.style.color = 'var(--pos)';
-          msg.textContent = 'Notifications enabled on this device.';
-          setTimeout(openNotifModal, 600);
+          let detail = 'Notifications enabled on this device.';
+          if (j.admin_email_configured && !j.is_admin) {
+            detail += ' (Note: this device is NOT flagged for admin pings — your email doesn\'t match ADMIN_EMAIL on the server.)';
+            msg.style.color = 'var(--warn)';
+          } else if (j.is_admin) {
+            detail += ' Admin pings enabled.';
+          }
+          msg.textContent = detail;
+          setTimeout(openNotifModal, 1800);
         } else if (mode === 'disable') {
           const existing = await reg.pushManager.getSubscription();
           if (existing) await existing.unsubscribe().catch(() => {});
