@@ -933,6 +933,15 @@
           <label for="add-title-input">Title (required if no member)</label>
           <input id="add-title-input" type="text" maxlength="120" />
         </div>
+        <div class="field" id="add-site-field" hidden>
+          <label for="add-site">Site (optional)</label>
+          <select id="add-site">
+            <option value="">No site</option>
+            <option value="MGH">MGH</option>
+            <option value="Waltham">Waltham</option>
+          </select>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:0.02em;">Appended to the chip — e.g. "Jess @ Waltham".</div>
+        </div>
         <div class="field" id="add-conf-field" hidden>
           <label for="add-conf">Conference link (optional for admin)</label>
           <input id="add-conf" type="url" placeholder="https://conference.example.com" />
@@ -997,6 +1006,15 @@
         <div class="field">
           <label for="edit-title-input">Title</label>
           <input id="edit-title-input" type="text" maxlength="120" />
+        </div>
+        <div class="field" id="edit-site-field" hidden>
+          <label for="edit-site">Site (optional)</label>
+          <select id="edit-site">
+            <option value="">No site</option>
+            <option value="MGH">MGH</option>
+            <option value="Waltham">Waltham</option>
+          </select>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:0.02em;">Appended to the chip — e.g. "Jess @ Waltham".</div>
         </div>
         <div class="field" id="edit-conf-field" hidden>
           <label for="edit-conf">Conference link</label>
@@ -1619,12 +1637,15 @@
       document.getElementById('add-conf-field').hidden = t !== 'cme';
       // Status only meaningful for time_away.
       document.getElementById('add-status-field').hidden = cat !== 'time_away';
+      // Site only meaningful for coverage adds.
+      document.getElementById('add-site-field').hidden = cat !== 'coverage_adds';
     }
     function updateEditCmeAndStatusVisibility() {
       const t = document.getElementById('edit-type').value;
       const cat = document.getElementById('edit-category').value;
       document.getElementById('edit-conf-field').hidden = t !== 'cme';
       document.getElementById('edit-status-field').hidden = cat !== 'time_away';
+      document.getElementById('edit-site-field').hidden = cat !== 'coverage_adds';
     }
 
     function updateOnlineState() {
@@ -2529,6 +2550,7 @@
       populateTypeSelect('add-category', 'add-type');
       document.getElementById('add-member').value = '';
       document.getElementById('add-title-input').value = '';
+      document.getElementById('add-site').value = '';
       document.getElementById('add-conf').value = '';
       const t = opts.defaultDate || ymd(new Date());
       document.getElementById('add-start').value = t;
@@ -2545,12 +2567,14 @@
       btn.disabled = true;
       const member_id = document.getElementById('add-member').value || null;
       const title = document.getElementById('add-title-input').value.trim();
+      const site  = document.getElementById('add-site').value;
       const eventType = document.getElementById('add-type').value;
       const conf = document.getElementById('add-conf').value.trim();
+      const finalTitle = composeTitleWithSite({ title, site, memberId: member_id, eventType });
       const entry = {
         member_id,
         event_type: eventType,
-        title: title || null,
+        title: finalTitle,
         start_date: document.getElementById('add-start').value,
         end_date:   document.getElementById('add-end').value,
         status:     document.getElementById('add-status').value,
@@ -2595,7 +2619,11 @@
       populateTypeSelect('edit-category', 'edit-type');
       document.getElementById('edit-type').value = entry.event_type;
       document.getElementById('edit-member').value = entry.member_id || '';
-      document.getElementById('edit-title-input').value = entry.title || '';
+      // Split title back into "base @ site" if the suffix matches a known site,
+      // so toggling the dropdown stays a true round-trip.
+      const { base, site } = splitTitleSite(entry.title || '');
+      document.getElementById('edit-title-input').value = base;
+      document.getElementById('edit-site').value = site;
       document.getElementById('edit-conf').value = entry.conference_link || '';
       document.getElementById('edit-start').value = entry.start_date;
       document.getElementById('edit-end').value = entry.end_date;
@@ -2615,10 +2643,13 @@
       const eventType = document.getElementById('edit-type').value;
       const cat = document.getElementById('edit-category').value;
       const conf = document.getElementById('edit-conf').value.trim();
+      const member_id = document.getElementById('edit-member').value || null;
+      const baseTitle = document.getElementById('edit-title-input').value.trim();
+      const site = document.getElementById('edit-site').value;
       const patch = {
         event_type: eventType,
-        member_id:  document.getElementById('edit-member').value || null,
-        title:      document.getElementById('edit-title-input').value.trim() || null,
+        member_id,
+        title: composeTitleWithSite({ title: baseTitle, site, memberId: member_id, eventType }),
         start_date: document.getElementById('edit-start').value,
         end_date:   document.getElementById('edit-end').value,
         notes:      document.getElementById('edit-notes').value.trim() || null,
@@ -3300,6 +3331,29 @@
       if (!iso) return '—';
       return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' });
     }
+    // Coverage entries can append a site suffix like 'Jess @ Waltham'.
+    // Stored as the entry title; parsed back when the edit modal opens so
+    // the dropdown stays in sync with the existing entry.
+    const SITES = ['MGH', 'Waltham'];
+    function composeTitleWithSite({ title, site, memberId, eventType }) {
+      const base = (title || '').trim();
+      if (!site) return base || null;
+      const meta = TYPE_META[eventType];
+      if (meta?.category !== 'coverage_adds') return base || null;
+      if (base) return `${base} @ ${site}`;
+      if (memberId) {
+        const member = state.members.find(m => m.id === memberId);
+        if (member) return `${member.name.split(/\s+/)[0]} @ ${site}`;
+      }
+      return `Coverage @ ${site}`;
+    }
+    function splitTitleSite(title) {
+      const pattern = new RegExp(`^(.*) @ (${SITES.join('|')})$`);
+      const m = (title || '').match(pattern);
+      if (m) return { base: m[1], site: m[2] };
+      return { base: title || '', site: '' };
+    }
+
     function escapeHtml(s) {
       return String(s ?? '').replace(/[&<>"']/g, c => (
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
