@@ -1787,8 +1787,11 @@
           body: JSON.stringify({ token: state.adminToken, kind: 'actions', limit: 200 }),
         });
         if (r.status === 401) { adminTokenExpired(); closeModal('audit-backdrop'); return; }
-        if (!r.ok) throw new Error('failed');
-        const j = await r.json();
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          const detail = j.error || j.detail || `HTTP ${r.status}`;
+          throw new Error(detail);
+        }
         const actions = j.actions || [];
         sub.textContent = actions.length
           ? `${actions.length} most recent action${actions.length === 1 ? '' : 's'}, newest first.`
@@ -1817,7 +1820,7 @@
         }
       } catch (err) {
         console.error('audit log', err);
-        list.innerHTML = '<div class="day-overview-empty">Could not load the audit log. Try refreshing.</div>';
+        list.innerHTML = `<div class="day-overview-empty">Could not load the audit log.<div class="helper">${escapeHtml(err.message || 'Unknown error')}</div></div>`;
       }
     }
 

@@ -33,6 +33,6 @@ export default async function handler(req, res) {
     return send(res, 200, { members: data || [] });
   } catch (err) {
     console.error('admin-list-members', err);
-    return send(res, 500, { error: 'server_error' });
+    return send(res, 500, { error: 'server_error', detail: String(err?.message || err) });
   }
 }
