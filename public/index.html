@@ -711,6 +711,7 @@
       </div>
       <div style="display:flex;gap:8px;">
         <button class="ghost" id="btn-manage-members">Manage Members</button>
+        <button class="ghost" id="btn-audit">Audit Log</button>
       </div>
     </div>
 
@@ -802,6 +803,20 @@
           <button class="primary" id="btn-day-add">Add Entry on This Day</button>
         </div>
         <button class="ghost" id="btn-day-overview-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUDIT LOG MODAL (admin) -->
+  <div class="modal-backdrop" id="audit-backdrop" data-modal>
+    <div class="modal x-wide" role="dialog" aria-modal="true" aria-labelledby="audit-title">
+      <div class="eyebrow">Admin · Audit</div>
+      <h2 id="audit-title">Audit Log</h2>
+      <div class="modal-sub" id="audit-sub">Recent admin actions, newest first.</div>
+      <div class="day-overview-list" id="audit-list" style="max-height:60vh;overflow-y:auto;"></div>
+      <div class="modal-actions">
+        <button class="ghost" id="btn-audit-close">Close</button>
+        <button class="ghost" id="btn-audit-refresh">Refresh</button>
       </div>
     </div>
   </div>
@@ -1532,6 +1547,9 @@
       document.getElementById('btn-signout').onclick   = signOut;
       document.getElementById('admin-pending-trigger').onclick = openPendingModal;
       document.getElementById('btn-pending-close').onclick    = () => closeModal('pending-backdrop');
+      document.getElementById('btn-audit').onclick            = openAuditModal;
+      document.getElementById('btn-audit-close').onclick      = () => closeModal('audit-backdrop');
+      document.getElementById('btn-audit-refresh').onclick    = openAuditModal;
       document.getElementById('btn-security').onclick           = openSecurityModal;
       document.getElementById('btn-notifications').onclick      = openNotifModal;
       document.getElementById('btn-notif-close').onclick        = () => closeModal('notif-backdrop');
@@ -1699,6 +1717,108 @@
       document.getElementById('admin-pending-count').textContent = pending;
       const trig = document.getElementById('admin-pending-trigger');
       if (trig) trig.disabled = pending === 0;
+    }
+
+    const AUDIT_LABELS = {
+      entry_create: 'Created entry',
+      entry_update: 'Updated entry',
+      entry_delete: 'Deleted entry',
+      entry_approved: 'Approved request',
+      entry_denied: 'Denied request',
+      entry_pending: 'Reopened request',
+      entry_remove_day_delete: 'Removed entry (single day)',
+      entry_remove_day_trim: 'Trimmed entry',
+      entry_remove_day_split: 'Split entry',
+      member_create: 'Created member',
+      member_approve: 'Approved signup',
+      member_deny: 'Denied signup',
+      member_deactivate: 'Deactivated member',
+      member_reactivate: 'Reactivated member',
+      member_update: 'Updated member',
+      member_reset_password: 'Reset password',
+      member_delete: 'Deleted member',
+    };
+
+    function relTime(iso) {
+      const d = new Date(iso);
+      const diff = Date.now() - d.getTime();
+      const min = Math.floor(diff / 60000);
+      if (min < 1) return 'just now';
+      if (min < 60) return `${min}m ago`;
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return `${hr}h ago`;
+      const day = Math.floor(hr / 24);
+      if (day < 7) return `${day}d ago`;
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+
+    function describeAuditTarget(a) {
+      if (a.target_type === 'team_member') {
+        const m = state.members.find(x => x.id === a.target_id);
+        if (m) return m.name;
+        return a.payload?.name || a.payload?.email || '(removed member)';
+      }
+      if (a.target_type === 'calendar_entry') {
+        const e = state.entries.find(x => x.id === a.target_id);
+        if (e) {
+          const member = e.member_id ? state.members.find(m => m.id === e.member_id) : null;
+          const who = member?.name?.split(' ')[0] || (e.title ? e.title : 'Entry');
+          const type = TYPE_META[e.event_type]?.label || e.event_type;
+          const range = e.start_date === e.end_date
+            ? formatDayShort(e.start_date)
+            : `${formatDayShort(e.start_date)} → ${formatDayShort(e.end_date)}`;
+          return `${who} · ${type} ${range}`;
+        }
+        return '(deleted entry)';
+      }
+      return '';
+    }
+
+    async function openAuditModal() {
+      if (!isAdminMode()) return;
+      openModal('audit-backdrop');
+      const list = document.getElementById('audit-list');
+      const sub  = document.getElementById('audit-sub');
+      list.innerHTML = '<div class="day-overview-empty">Loading…</div>';
+      try {
+        const r = await fetch('/api/admin-list-members', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: state.adminToken, kind: 'actions', limit: 200 }),
+        });
+        if (r.status === 401) { adminTokenExpired(); closeModal('audit-backdrop'); return; }
+        if (!r.ok) throw new Error('failed');
+        const j = await r.json();
+        const actions = j.actions || [];
+        sub.textContent = actions.length
+          ? `${actions.length} most recent action${actions.length === 1 ? '' : 's'}, newest first.`
+          : 'No admin actions yet.';
+        list.innerHTML = '';
+        if (!actions.length) {
+          list.innerHTML = '<div class="day-overview-empty">Nothing yet.<div class="helper">Actions will appear here as you approve requests, manage members, and edit entries.</div></div>';
+          return;
+        }
+        for (const a of actions) {
+          const label  = AUDIT_LABELS[a.action] || a.action;
+          const target = describeAuditTarget(a);
+          const row = document.createElement('div');
+          row.className = 'day-overview-row';
+          row.style.cursor = 'default';
+          row.innerHTML = `
+            <div class="row-meta">
+              <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+                <div style="font-size:12px;font-weight:600;color:var(--ink);">${escapeHtml(label)}</div>
+                ${target ? `<div style="font-size:11px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(target)}</div>` : ''}
+              </div>
+              <span class="row-arrow" title="${escapeHtml(new Date(a.created_at).toLocaleString())}">${escapeHtml(relTime(a.created_at))}</span>
+            </div>
+          `;
+          list.appendChild(row);
+        }
+      } catch (err) {
+        console.error('audit log', err);
+        list.innerHTML = '<div class="day-overview-empty">Could not load the audit log. Try refreshing.</div>';
+      }
     }
 
     function openPendingModal() {
