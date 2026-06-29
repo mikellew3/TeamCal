@@ -568,7 +568,37 @@
     }
     *, *::before, *::after { -webkit-tap-highlight-color:transparent; }
 
-    /* ============ DAY OVERVIEW MODAL ============ */
+    /* ============ DAY DRAWER (inline below a calendar row) ============ */
+    .cell-drawer {
+      grid-column:1 / -1;
+      background:var(--paper-warm);
+      border-top:2px solid var(--accent);
+      border-bottom:1px solid var(--line-strong);
+      padding:14px 18px 16px;
+    }
+    .cell-drawer-head {
+      display:flex;justify-content:space-between;align-items:baseline;
+      gap:10px;margin-bottom:8px;flex-wrap:wrap;
+    }
+    .cell-drawer-head .day-label {
+      font-family:'Source Serif 4',serif;
+      font-size:15px;font-weight:600;color:var(--ink);
+    }
+    .cell-drawer-head .sub { font-size:11px;color:var(--muted); }
+    .cell-drawer-head .close {
+      background:transparent;border:0;color:var(--muted);
+      cursor:pointer;font-size:18px;line-height:1;padding:4px 8px;
+      min-height:0;border-radius:4px;
+    }
+    .cell-drawer-head .close:hover { background:var(--accent-soft);color:var(--ink); }
+    .cell-drawer .day-overview-list { margin-top:0;margin-bottom:0; }
+    .cell-drawer-actions {
+      margin-top:10px;padding-top:10px;
+      border-top:1px solid var(--line);
+      display:flex;justify-content:flex-end;
+    }
+
+    /* ============ DAY OVERVIEW MODAL (legacy, retained for "+N more" fallback) ============ */
     .day-overview-list {
       display:flex;flex-direction:column;gap:8px;
       margin-top:8px;margin-bottom:12px;
@@ -1304,6 +1334,7 @@
       adminToken: sessionStorage.getItem('admin_token') || null,
       detailEntry: null,
       mfaEnabled: false,
+      expandedDay: null,         // YYYY-MM-DD of the day-detail drawer, or null
     };
     state.viewMonth.setDate(1);
     state.viewMonth.setHours(0, 0, 0, 0);
@@ -1546,7 +1577,7 @@
     function bindStaticHandlers() {
       document.getElementById('btn-prev').onclick  = () => stepMonth(-1);
       document.getElementById('btn-next').onclick  = () => stepMonth(1);
-      document.getElementById('btn-today').onclick = () => { state.viewMonth = firstOfMonth(new Date()); renderAll(); };
+      document.getElementById('btn-today').onclick = () => { state.viewMonth = firstOfMonth(new Date()); state.expandedDay = null; renderAll(); };
       document.getElementById('btn-request').onclick   = openRequestModal;
       document.getElementById('btn-add-entry').onclick = openAddModal;
       document.getElementById('btn-admin').onclick     = openAdminLogin;
@@ -1985,56 +2016,161 @@
       const todayStr = ymd(new Date());
       const isAdmin = isAdminMode();
 
-      for (const c of cells) {
-        const cell = document.createElement('div');
-        cell.className = 'cell';
-        const dayStr = ymd(c.date);
-        if (c.outside) cell.classList.add('outside');
-        if ([0,6].includes(c.date.getDay())) cell.classList.add('weekend');
-        if (dayStr === todayStr) cell.classList.add('today');
+      // Group cells into weeks so we can insert an inline drawer row
+      // after whichever week contains state.expandedDay.
+      for (let wi = 0; wi < 6; wi++) {
+        const weekCells = cells.slice(wi * 7, wi * 7 + 7);
+        let weekContainsExpanded = false;
 
-        const num = document.createElement('div');
-        num.className = 'num';
-        num.textContent = c.date.getDate();
-        cell.appendChild(num);
+        for (const c of weekCells) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          const dayStr = ymd(c.date);
+          if (c.outside) cell.classList.add('outside');
+          if ([0,6].includes(c.date.getDay())) cell.classList.add('weekend');
+          if (dayStr === todayStr) cell.classList.add('today');
+          if (dayStr === state.expandedDay && !c.outside) {
+            cell.classList.add('expanded');
+            weekContainsExpanded = true;
+          }
 
-        const chips = document.createElement('div');
-        chips.className = 'cell-chips';
-        cell.appendChild(chips);
+          const num = document.createElement('div');
+          num.className = 'num';
+          num.textContent = c.date.getDate();
+          cell.appendChild(num);
 
-        const dayEntries = entriesOn(dayStr);
-        const sorted = [...dayEntries].sort((a, b) => {
-          const ca = TYPE_META[a.event_type]?.category || 'zzz';
-          const cb = TYPE_META[b.event_type]?.category || 'zzz';
-          if (ca !== cb) return ca.localeCompare(cb);
-          return (a.start_date || '').localeCompare(b.start_date || '');
-        });
-        const max = 3;
-        const visible = sorted.slice(0, max);
-        const hidden = sorted.length - visible.length;
-        for (const e of visible) chips.appendChild(renderChip(e, dayStr));
-        if (hidden > 0) {
-          const more = document.createElement('div');
-          more.className = 'cell-more';
-          more.textContent = `+${hidden} more`;
-          more.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            openDayOverview(dayStr);
+          const chips = document.createElement('div');
+          chips.className = 'cell-chips';
+          cell.appendChild(chips);
+
+          const dayEntries = entriesOn(dayStr);
+          const sorted = [...dayEntries].sort((a, b) => {
+            const ca = TYPE_META[a.event_type]?.category || 'zzz';
+            const cb = TYPE_META[b.event_type]?.category || 'zzz';
+            if (ca !== cb) return ca.localeCompare(cb);
+            return (a.start_date || '').localeCompare(b.start_date || '');
           });
-          chips.appendChild(more);
+          const max = 5;
+          const visible = sorted.slice(0, max);
+          const hidden = sorted.length - visible.length;
+          for (const e of visible) chips.appendChild(renderChip(e, dayStr));
+          if (hidden > 0) {
+            const more = document.createElement('div');
+            more.className = 'cell-more';
+            more.textContent = `+${hidden} more`;
+            more.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              toggleDayDrawer(dayStr);
+            });
+            chips.appendChild(more);
+          }
+
+          // In-month cells toggle the inline drawer. Out-of-month
+          // cells are non-interactive — no click handler, default cursor.
+          if (!c.outside) {
+            cell.style.cursor = 'pointer';
+            cell.addEventListener('click', (ev) => {
+              if (ev.target.closest('.chip') || ev.target.closest('.cell-more')) return;
+              toggleDayDrawer(dayStr);
+            });
+          }
+          grid.appendChild(cell);
         }
 
-        // In-month cells are always tappable (Day Overview). Out-of-month
-        // cells are non-interactive — no click handler, default cursor.
-        if (!c.outside) {
-          cell.style.cursor = 'pointer';
-          cell.addEventListener('click', (ev) => {
-            if (ev.target.closest('.chip') || ev.target.closest('.cell-more')) return;
-            openDayOverview(dayStr);
-          });
+        if (weekContainsExpanded) {
+          grid.appendChild(renderDayDrawer(state.expandedDay));
         }
-        grid.appendChild(cell);
       }
+    }
+
+    function toggleDayDrawer(dayStr) {
+      state.expandedDay = state.expandedDay === dayStr ? null : dayStr;
+      renderCalendar();
+    }
+
+    function renderDayDrawer(dayStr) {
+      const date = new Date(`${dayStr}T00:00:00`);
+      const dayLabel = date.toLocaleDateString('en-US',
+        { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+      const entries = entriesOn(dayStr).sort((a, b) => {
+        const ca = TYPE_META[a.event_type]?.category || 'zzz';
+        const cb = TYPE_META[b.event_type]?.category || 'zzz';
+        if (ca !== cb) return ca.localeCompare(cb);
+        return (a.start_date || '').localeCompare(b.start_date || '');
+      });
+
+      const wrap = document.createElement('div');
+      wrap.className = 'cell-drawer';
+
+      const head = document.createElement('div');
+      head.className = 'cell-drawer-head';
+      let subText = 'No entries on this day.';
+      if (entries.length) {
+        const offCount = entries.filter(e => TIME_AWAY_TYPES.includes(e.event_type)).length;
+        const breakdown = [];
+        if (offCount) breakdown.push(`${offCount} off`);
+        const counts = {};
+        for (const e of entries) {
+          if (TIME_AWAY_TYPES.includes(e.event_type)) continue;
+          const lbl = (TYPE_META[e.event_type]?.label || e.event_type).toLowerCase();
+          counts[lbl] = (counts[lbl] || 0) + 1;
+        }
+        for (const [lbl, n] of Object.entries(counts)) breakdown.push(`${n} ${lbl}`);
+        subText = `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} · ${breakdown.join(', ')}`;
+      }
+      head.innerHTML = `
+        <div>
+          <div class="day-label">${escapeHtml(dayLabel)}</div>
+          <div class="sub">${escapeHtml(subText)}</div>
+        </div>
+        <button type="button" class="close" aria-label="Close" title="Close">×</button>
+      `;
+      head.querySelector('.close').onclick = () => { state.expandedDay = null; renderCalendar(); };
+      wrap.appendChild(head);
+
+      if (entries.length) {
+        const list = document.createElement('div');
+        list.className = 'day-overview-list';
+        for (const e of entries) {
+          const row = document.createElement('div');
+          row.className = 'day-overview-row';
+          const meta = document.createElement('div');
+          meta.className = 'row-meta';
+          const chip = renderChip(e);
+          chip.style.cursor = 'pointer';
+          chip.style.pointerEvents = 'none';
+          const arrow = document.createElement('span');
+          arrow.className = 'row-arrow';
+          arrow.textContent = 'View detail →';
+          meta.appendChild(chip);
+          meta.appendChild(arrow);
+          row.appendChild(meta);
+
+          const canSeeNotes = isAdminMode() || (e.member_id && e.member_id === state.me?.id);
+          if (canSeeNotes && e.notes) {
+            const np = document.createElement('div');
+            np.className = 'note-preview';
+            const preview = e.notes.length > 80 ? e.notes.slice(0, 80).trim() + '…' : e.notes;
+            np.textContent = `Notes: ${preview}`;
+            row.appendChild(np);
+          }
+          row.addEventListener('click', () => openDetail(e, dayStr));
+          list.appendChild(row);
+        }
+        wrap.appendChild(list);
+      }
+
+      if (isAdminMode()) {
+        const actions = document.createElement('div');
+        actions.className = 'cell-drawer-actions';
+        const addBtn = document.createElement('button');
+        addBtn.className = 'primary';
+        addBtn.textContent = 'Add Entry on This Day';
+        addBtn.onclick = () => openAddModal({ defaultDate: dayStr });
+        actions.appendChild(addBtn);
+        wrap.appendChild(actions);
+      }
+      return wrap;
     }
 
     function renderChip(entry, dayContext) {
@@ -3434,6 +3570,7 @@
       const d = new Date(state.viewMonth);
       d.setMonth(d.getMonth() + n);
       state.viewMonth = firstOfMonth(d);
+      state.expandedDay = null;       // collapse any open day drawer
       renderAll();
     }
     function expandRange(start, end) {
