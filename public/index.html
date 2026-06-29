@@ -173,7 +173,7 @@
       border-radius:2px;overflow:hidden;background:var(--paper);
     }
     .weekdays {
-      display:grid;grid-template-columns:repeat(7,1fr);
+      display:grid;grid-template-columns:repeat(5,1fr);
       background:var(--paper-warm);
       border-bottom:1px solid var(--line-strong);
     }
@@ -183,7 +183,7 @@
       padding:8px 10px;text-align:left;
     }
     .cal-grid {
-      display:grid;grid-template-columns:repeat(7,1fr);
+      display:grid;grid-template-columns:repeat(5,1fr);
       grid-auto-rows:auto;
     }
     .cell {
@@ -194,8 +194,7 @@
       display:flex;flex-direction:column;overflow:hidden;
       cursor:default;
     }
-    .cell:nth-child(7n) { border-right:none; }
-    .cell.weekend { background:var(--weekend-bg); }
+    .cell:nth-child(5n) { border-right:none; }
     .cell.outside { background:var(--paper-warm); }
     .cell.outside .num { color:#b8b8b0; }
     .cell .num {
@@ -867,7 +866,7 @@
       </div>
       <div class="calendar">
         <div class="weekdays">
-          <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+          <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div>
         </div>
         <div class="cal-grid" id="cal-grid"></div>
       </div>
@@ -2314,32 +2313,27 @@
       const grid = document.getElementById('cal-grid');
       grid.innerHTML = '';
 
+      // Business-week-only grid: 6 weeks × 5 weekdays (Mon–Fri). MGSA has no
+      // weekend coverage, so Sat/Sun are skipped entirely. Any orphan
+      // weekend entry in the DB stays in the data (won't render here).
       const first = firstOfMonth(m);
-      const startWeekday = first.getDay();
-      const daysInMonth = lastOfMonth(m).getDate();
       const cells = [];
 
-      // Lead-in (previous month tail)
-      const prevMonth = new Date(m); prevMonth.setMonth(prevMonth.getMonth() - 1);
-      const prevDays = lastOfMonth(prevMonth).getDate();
-      for (let i = startWeekday - 1; i >= 0; i--) {
-        const d = new Date(prevMonth); d.setDate(prevDays - i);
-        cells.push({ date:d, outside:true });
-      }
-      // Current month
-      for (let d = 1; d <= daysInMonth; d++) {
-        cells.push({ date:new Date(m.getFullYear(), m.getMonth(), d), outside:false });
-      }
-      // Tail
-      while (cells.length % 7 !== 0) {
-        const last = cells[cells.length - 1].date;
-        const next = new Date(last); next.setDate(last.getDate() + 1);
-        cells.push({ date:next, outside:true });
-      }
-      while (cells.length < 42) {
-        const last = cells[cells.length - 1].date;
-        const next = new Date(last); next.setDate(last.getDate() + 1);
-        cells.push({ date:next, outside:true });
+      // Anchor: Monday of the week containing the 1st. If the 1st falls on a
+      // weekend, this still walks back to the Monday of THAT calendar week
+      // — the Sat/Sun entries are just hidden naturally.
+      const cursor = new Date(first);
+      const isoDow = (cursor.getDay() + 6) % 7;  // Mon=0..Sun=6
+      cursor.setDate(cursor.getDate() - isoDow);
+
+      // 6 weeks × 5 weekdays = 30 cells
+      for (let week = 0; week < 6; week++) {
+        for (let day = 0; day < 5; day++) {
+          const d = new Date(cursor);
+          d.setDate(cursor.getDate() + week * 7 + day);
+          const inMonth = d.getMonth() === m.getMonth() && d.getFullYear() === m.getFullYear();
+          cells.push({ date: d, outside: !inMonth });
+        }
       }
 
       const todayStr = ymd(new Date());
@@ -2348,7 +2342,7 @@
       // Group cells into weeks so we can insert an inline drawer row
       // after whichever week contains state.expandedDay.
       for (let wi = 0; wi < 6; wi++) {
-        const weekCells = cells.slice(wi * 7, wi * 7 + 7);
+        const weekCells = cells.slice(wi * 5, wi * 5 + 5);
         let weekContainsExpanded = false;
 
         for (const c of weekCells) {
@@ -2356,7 +2350,6 @@
           cell.className = 'cell';
           const dayStr = ymd(c.date);
           if (c.outside) cell.classList.add('outside');
-          if ([0,6].includes(c.date.getDay())) cell.classList.add('weekend');
           if (dayStr === todayStr) cell.classList.add('today');
           if (dayStr === state.expandedDay && !c.outside) {
             cell.classList.add('expanded');
