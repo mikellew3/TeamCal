@@ -852,10 +852,16 @@
           <tr><td class="label">Range</td><td id="detail-range">—</td></tr>
           <tr id="detail-conf-row" hidden><td class="label">Conference</td><td id="detail-conf" class="conf-link">—</td></tr>
           <tr id="detail-notes-row"><td class="label">Notes</td><td id="detail-notes" class="note">—</td></tr>
+          <tr id="detail-decision-row" hidden><td class="label">Admin note</td><td id="detail-decision" class="note">—</td></tr>
           <tr id="detail-submitted-row"><td class="label">Submitted</td><td id="detail-submitted">—</td></tr>
           <tr id="detail-decided-row"><td class="label">Decided</td><td id="detail-decided">—</td></tr>
         </tbody>
       </table>
+      <div class="field" id="detail-decide-note-field" hidden style="margin-top:14px;">
+        <label for="detail-decide-note">Optional note to requester</label>
+        <textarea id="detail-decide-note" maxlength="500" rows="2" placeholder="e.g. 'Approved — make it count!' or 'Denied — try moving Fri off the heads-up day.'"></textarea>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:0.02em;">Included in the push notification and saved on the request.</div>
+      </div>
       <div class="modal-actions">
         <div class="left" id="detail-admin-actions" hidden>
           <button class="danger" id="btn-delete">Delete Entry</button>
@@ -2334,6 +2340,24 @@
       document.getElementById('btn-detail-deny').hidden    = !(showStatusActions && entry.status !== 'denied');
       document.getElementById('btn-detail-reset').hidden   = !(showStatusActions && entry.status !== 'pending');
 
+      // Optional admin note when deciding — only show the input while the
+      // request is still pending and admin is looking.
+      const decideNoteField = document.getElementById('detail-decide-note-field');
+      const decideNoteInput = document.getElementById('detail-decide-note');
+      decideNoteField.hidden = !(showStatusActions && entry.status === 'pending');
+      decideNoteInput.value = '';
+
+      // Existing admin note row: visible to admin and requester when present.
+      const decisionRow = document.getElementById('detail-decision-row');
+      const decisionEl  = document.getElementById('detail-decision');
+      const canSeeDecision = canSeeNotes; // same audience as the original notes
+      if (entry.decision_note && canSeeDecision) {
+        decisionRow.hidden = false;
+        decisionEl.textContent = entry.decision_note;
+      } else {
+        decisionRow.hidden = true;
+      }
+
       // "Remove This Day" — only when admin opened detail from a specific
       // day cell AND the entry spans more than one day.
       const removeBtn = document.getElementById('btn-remove-day');
@@ -2567,15 +2591,16 @@
     async function decideEntry(status) {
       const entry = state.detailEntry;
       if (!entry) return;
-      await callDecide(entry.id, status, false);
+      const note = (document.getElementById('detail-decide-note')?.value || '').trim();
+      await callDecide(entry.id, status, false, note || null);
     }
 
-    async function callDecide(id, status, override) {
+    async function callDecide(id, status, override, decisionNote) {
       try {
         const r = await fetch('/api/admin-decide', {
           method:'POST',
           headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({ token: state.adminToken, id, status, override }),
+          body: JSON.stringify({ token: state.adminToken, id, status, override, decision_note: decisionNote || null }),
         });
         const j = await r.json();
         if (r.status === 401) { adminTokenExpired(); return; }
@@ -2588,7 +2613,7 @@
             bodyHtml: `<div class="conflict-preview block" style="margin-bottom:0;"><div class="icon">!</div><div><strong>Conflicts:</strong><ul>${items}</ul></div></div>`,
             confirmText: 'Override & Approve',
             danger: false,
-            onConfirm: async () => { await callDecide(id, status, true); },
+            onConfirm: async () => { await callDecide(id, status, true, decisionNote); },
           });
           return;
         }

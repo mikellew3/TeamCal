@@ -5,19 +5,24 @@ import {
 } from './_lib.js';
 import { sendPush } from './_push.js';
 
-// POST { token, id, status, override? } → approve / deny / reset to pending.
+// POST { token, id, status, override?, decision_note? }
+//   → approve / deny / reset to pending.
 // On approve, re-runs conflict check against APPROVED entries only. If a
 // conflict exists, returns 409 unless override=true. On any successful
-// decision, sends a push notification to the requesting member.
+// decision, sends a push notification to the requesting member and
+// persists the optional admin note on the entry (cleared on reset).
 export default async function handler(req, res) {
   if (!methodGuard(req, res, ['POST'])) return;
   const body = await readJson(req);
   if (!verifyAdminToken(body?.token)) return send(res, 401, { error: 'unauthorized' });
 
-  const { id, status, override } = body || {};
+  const { id, status, override, decision_note } = body || {};
   if (!id || !['pending', 'approved', 'denied'].includes(status)) {
     return send(res, 400, { error: 'invalid_payload' });
   }
+  const note = (typeof decision_note === 'string' && decision_note.trim())
+    ? decision_note.trim().slice(0, 500)
+    : null;
 
   try {
     const supa = serviceClient();
@@ -50,6 +55,7 @@ export default async function handler(req, res) {
       status,
       decided_at: status === 'pending' ? null : new Date().toISOString(),
       decided_by: status === 'pending' ? null : 'admin',
+      decision_note: status === 'pending' ? null : note,
     };
     const { data, error } = await supa
       .from('calendar_entries')
@@ -80,6 +86,7 @@ export default async function handler(req, res) {
         title = 'Request reopened';
         bodyTxt = `Your ${typeLabel} ${range} is pending again`;
       }
+      if (note) bodyTxt += ` — "${note.length > 120 ? note.slice(0, 117) + '…' : note}"`;
       sendPush({
         recipientType: 'member',
         memberId: entry.member_id,
