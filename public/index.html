@@ -845,6 +845,7 @@
       </div>
       <div style="display:flex;gap:8px;">
         <button class="ghost" id="btn-week-builder">Week Builder</button>
+        <button class="ghost" id="btn-discussions">Discussions</button>
         <button class="ghost" id="btn-manage-members">Manage Members</button>
         <button class="ghost" id="btn-audit">Audit Log</button>
       </div>
@@ -952,6 +953,20 @@
       <div class="modal-actions">
         <button class="ghost" id="btn-audit-close">Close</button>
         <button class="ghost" id="btn-audit-refresh">Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DISCUSSIONS MODAL (admin) -->
+  <div class="modal-backdrop" id="discussions-backdrop" data-modal>
+    <div class="modal x-wide" role="dialog" aria-modal="true" aria-labelledby="discussions-title">
+      <div class="eyebrow">Admin · Discussions</div>
+      <h2 id="discussions-title">Discussions</h2>
+      <div class="modal-sub" id="discussions-sub">Entries with comments, newest activity first.</div>
+      <div class="day-overview-list" id="discussions-list" style="max-height:60vh;overflow-y:auto;"></div>
+      <div class="modal-actions">
+        <button class="ghost" id="btn-discussions-close">Close</button>
+        <button class="ghost" id="btn-discussions-refresh">Refresh</button>
       </div>
     </div>
   </div>
@@ -1732,6 +1747,9 @@
       document.getElementById('btn-audit-close').onclick      = () => closeModal('audit-backdrop');
       document.getElementById('btn-audit-refresh').onclick    = openAuditModal;
       document.getElementById('btn-week-builder').onclick     = openWeekBuilder;
+      document.getElementById('btn-discussions').onclick      = openDiscussionsModal;
+      document.getElementById('btn-discussions-close').onclick   = () => closeModal('discussions-backdrop');
+      document.getElementById('btn-discussions-refresh').onclick = openDiscussionsModal;
       document.getElementById('btn-week-close').onclick       = () => closeModal('week-backdrop');
       document.getElementById('btn-week-close-x').onclick     = () => closeModal('week-backdrop');
       document.getElementById('btn-week-prev').onclick        = () => stepBuilderWeek(-1);
@@ -1885,16 +1903,17 @@
 
     // Home-screen badge: admins see total pending request count; members
     // get the badge cleared on every load since seeing the page = read.
-    function updateAppBadge() {
+    async function updateAppBadge() {
       try {
         if (!('setAppBadge' in navigator)) return;
+        const unread = await fetchUnreadCount();
+        let total = unread;
         if (isAdminMode()) {
           const pending = state.entries.filter(e => e.status === 'pending').length;
-          if (pending > 0) navigator.setAppBadge(pending).catch(() => {});
-          else navigator.clearAppBadge?.().catch(() => {});
-        } else {
-          navigator.clearAppBadge?.().catch(() => {});
+          total += pending;
         }
+        if (total > 0) navigator.setAppBadge(total).catch(() => {});
+        else navigator.clearAppBadge?.().catch(() => {});
       } catch {}
     }
 
@@ -2048,6 +2067,76 @@
         col.appendChild(addBtn);
 
         grid.appendChild(col);
+      }
+    }
+
+    async function openDiscussionsModal() {
+      if (!isAdminMode()) return;
+      openModal('discussions-backdrop');
+      const list = document.getElementById('discussions-list');
+      const sub  = document.getElementById('discussions-sub');
+      list.innerHTML = '<div class="day-overview-empty">Loading…</div>';
+      try {
+        const r = await fetch('/api/entry-messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_token: state.adminToken, kind: 'discussions', limit: 100 }),
+        });
+        if (r.status === 401) { adminTokenExpired(); closeModal('discussions-backdrop'); return; }
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.detail || j.error || `HTTP ${r.status}`);
+        const items = j.discussions || [];
+        sub.textContent = items.length
+          ? `${items.length} ${items.length === 1 ? 'thread' : 'threads'} with comments, newest activity first.`
+          : 'No discussions yet.';
+        list.innerHTML = '';
+        if (!items.length) {
+          list.innerHTML = '<div class="day-overview-empty">Nothing yet.<div class="helper">Threads appear here as you or members post comments on entries.</div></div>';
+          return;
+        }
+        for (const it of items) {
+          const e = it.entry;
+          const meta = TYPE_META[e.event_type] || { tag:'?', label:'?', category:'time_away' };
+          const memberName = e.team_members?.name || (e.title ? e.title : 'Entry');
+          const range = e.start_date === e.end_date
+            ? formatDayLong(e.start_date)
+            : `${formatDayLong(e.start_date)} → ${formatDayLong(e.end_date)}`;
+          const lastWho = it.latest_role === 'admin' ? 'Admin' : (memberName.split(' ')[0] || 'Member');
+          const preview = (it.latest_preview || '').trim();
+          const previewHtml = preview ? `<div class="note-preview"><strong>${escapeHtml(lastWho)}:</strong> "${escapeHtml(preview.length > 100 ? preview.slice(0, 100) + '…' : preview)}"</div>` : '';
+          const unreadHtml = it.unread > 0
+            ? `<span style="background:var(--neg);color:var(--paper);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:0.04em;">${it.unread}</span>`
+            : '';
+          const row = document.createElement('div');
+          row.className = 'day-overview-row';
+          row.innerHTML = `
+            <div class="row-meta">
+              <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+                <span class="chip cat-${meta.category === 'time_away' ? 'time-away' : meta.category === 'events' ? 'events' : 'coverage'} ${e.status || ''}" style="margin:0;flex-shrink:0;">
+                  ${meta.tag ? `<span class="type-tag">${meta.tag}</span>` : ''}
+                  <span class="label">${escapeHtml(memberName)}</span>
+                </span>
+                <span style="font-size:12px;color:var(--ink-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${escapeHtml(range)} · ${it.total_messages} ${it.total_messages === 1 ? 'comment' : 'comments'}
+                </span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                ${unreadHtml}
+                <span class="row-arrow" title="${escapeHtml(new Date(it.latest_at).toLocaleString())}">${escapeHtml(relTime(it.latest_at))}</span>
+              </div>
+            </div>
+            ${previewHtml}
+          `;
+          row.onclick = () => {
+            closeModal('discussions-backdrop');
+            const entry = state.entries.find(x => x.id === e.id) || e;
+            openDetail(entry);
+          };
+          list.appendChild(row);
+        }
+      } catch (err) {
+        console.error('discussions', err);
+        list.innerHTML = `<div class="day-overview-empty">Couldn't load discussions.<div class="helper">${escapeHtml(err.message || 'Unknown error')}</div></div>`;
       }
     }
 
@@ -2810,6 +2899,8 @@
           for (const m of messages) list.appendChild(renderThreadMsg(m));
           // Auto-scroll to latest
           requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
+          // Mark messages addressed to the viewer as read, then refresh the badge.
+          markThreadRead(entryId).then(() => updateAppBadge());
         }
       } catch (err) {
         console.error('thread load', err);
@@ -2839,6 +2930,29 @@
       wrap.appendChild(head);
       wrap.appendChild(body);
       return wrap;
+    }
+
+    async function markThreadRead(entryId) {
+      const payload = { kind: 'mark_read', entry_id: entryId };
+      const headers = { 'Content-Type': 'application/json' };
+      if (isAdminMode()) payload.admin_token = state.adminToken;
+      else headers['Authorization'] = `Bearer ${state.session.access_token}`;
+      try {
+        await fetch('/api/entry-messages', { method: 'POST', headers, body: JSON.stringify(payload) });
+      } catch (err) { console.warn('mark_read', err); }
+    }
+
+    async function fetchUnreadCount() {
+      const payload = { kind: 'unread_count' };
+      const headers = { 'Content-Type': 'application/json' };
+      if (isAdminMode()) payload.admin_token = state.adminToken;
+      else headers['Authorization'] = `Bearer ${state.session.access_token}`;
+      try {
+        const r = await fetch('/api/entry-messages', { method: 'POST', headers, body: JSON.stringify(payload) });
+        if (!r.ok) return 0;
+        const j = await r.json().catch(() => ({}));
+        return j.count || 0;
+      } catch { return 0; }
     }
 
     async function postEntryMessage(entryId) {
