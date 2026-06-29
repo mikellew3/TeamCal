@@ -551,6 +551,11 @@
       .cell-drawer-head { flex-direction:column;align-items:flex-start;gap:4px; }
       .cell-drawer-head .close { align-self:flex-end;margin-top:-30px; }
       .cell-drawer-actions button { width:100%;min-height:44px; }
+      /* Week builder: stack columns vertically on phone */
+      .week-grid { grid-template-columns:1fr;gap:6px; }
+      .week-col { min-height:0;padding:10px 12px; }
+      .week-col .add-btn { min-height:44px; }
+      .week-x { top:10px;right:10px; }
     }
 
     /* Very narrow phones (iPhone SE, etc.) */
@@ -573,6 +578,67 @@
       button:active:not(:disabled) { opacity:0.7; }
     }
     *, *::before, *::after { -webkit-tap-highlight-color:transparent; }
+
+    /* ============ WEEK BUILDER (admin modal) ============ */
+    .week-x {
+      position:absolute;top:14px;right:14px;
+      width:28px;height:28px;padding:0;
+      background:transparent;border:1px solid var(--line);
+      color:var(--ink-2);font-size:18px;line-height:1;cursor:pointer;
+      border-radius:50%;min-height:0;
+      display:inline-flex;align-items:center;justify-content:center;
+    }
+    .week-x:hover { background:var(--ink);color:var(--paper);border-color:var(--ink); }
+    .modal .week-nav {
+      display:flex;align-items:center;gap:10px;
+      justify-content:space-between;flex-wrap:wrap;
+      margin:8px 0 14px;
+    }
+    .modal .week-nav .week-label {
+      font-family:'Source Serif 4',serif;
+      font-size:16px;font-weight:600;color:var(--ink);flex:1;text-align:center;
+      min-width:160px;
+    }
+    .modal .week-nav button { font-size:11px;padding:6px 12px;min-height:32px; }
+    .week-grid {
+      display:grid;
+      grid-template-columns:repeat(5,1fr);
+      gap:8px;
+      margin-bottom:12px;
+    }
+    .week-col {
+      display:flex;flex-direction:column;
+      background:var(--paper-warm);
+      border:1px solid var(--line);
+      border-radius:4px;
+      padding:10px 8px;
+      min-height:240px;
+    }
+    .week-col.today { border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft) inset; }
+    .week-col-head {
+      display:flex;justify-content:space-between;align-items:baseline;
+      padding-bottom:6px;margin-bottom:8px;
+      border-bottom:1px solid var(--line);
+    }
+    .week-col-head .dow {
+      font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
+      font-weight:600;color:var(--ink-2);
+    }
+    .week-col-head .day-num {
+      font-family:'Source Serif 4',serif;
+      font-size:18px;font-weight:600;color:var(--ink);line-height:1;
+    }
+    .week-col .chips { flex:1;display:flex;flex-direction:column;gap:0;min-width:0; }
+    .week-col .chips .chip { margin-bottom:3px; }
+    .week-col .empty { font-size:11px;color:var(--muted);font-style:italic;padding:4px 0; }
+    .week-col .add-btn {
+      margin-top:10px;font-size:11px;font-weight:600;padding:7px 8px;
+      border:1px dashed var(--line-strong);background:transparent;
+      cursor:pointer;border-radius:3px;color:var(--ink-2);
+      letter-spacing:0.04em;
+      min-height:34px;
+    }
+    .week-col .add-btn:hover { background:var(--accent-soft);border-style:solid;border-color:var(--accent);color:var(--accent-deep); }
 
     /* ============ DAY DRAWER (inline below a calendar row) ============ */
     .cell.expanded { background:var(--accent-soft); }
@@ -748,6 +814,7 @@
         </span>
       </div>
       <div style="display:flex;gap:8px;">
+        <button class="ghost" id="btn-week-builder">Week Builder</button>
         <button class="ghost" id="btn-manage-members">Manage Members</button>
         <button class="ghost" id="btn-audit">Audit Log</button>
       </div>
@@ -855,6 +922,26 @@
       <div class="modal-actions">
         <button class="ghost" id="btn-audit-close">Close</button>
         <button class="ghost" id="btn-audit-refresh">Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- WEEK BUILDER MODAL (admin) -->
+  <div class="modal-backdrop" id="week-backdrop" data-modal>
+    <div class="modal x-wide" role="dialog" aria-modal="true" aria-labelledby="week-title" style="max-width:1100px;width:95vw;">
+      <button type="button" class="week-x" id="btn-week-close-x" aria-label="Close">×</button>
+      <div class="eyebrow">Admin · Week Builder</div>
+      <h2 id="week-title">Week Builder</h2>
+      <div class="modal-sub" id="week-sub">Tap + Add on any day to drop in an entry. Click a chip to edit. Use the arrows to step weeks.</div>
+      <div class="week-nav">
+        <button type="button" class="ghost" id="btn-week-prev">‹ Prev</button>
+        <div class="week-label" id="week-label">—</div>
+        <button type="button" class="ghost" id="btn-week-today">This Week</button>
+        <button type="button" class="ghost" id="btn-week-next">Next ›</button>
+      </div>
+      <div id="week-grid" class="week-grid"></div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="btn-week-close">Close</button>
       </div>
     </div>
   </div>
@@ -1547,6 +1634,10 @@
       try {
         await loadEntries();
         renderAll();
+        // Keep the Week Builder live while it's open so a fresh Add Entry
+        // shows up immediately without closing the modal.
+        const weekOpen = document.getElementById('week-backdrop')?.classList.contains('open');
+        if (weekOpen) renderWeekBuilder();
       } catch (e) {
         console.error('refresh', e);
         setSync('Connection lost — refresh to retry', true);
@@ -1595,6 +1686,12 @@
       document.getElementById('btn-audit').onclick            = openAuditModal;
       document.getElementById('btn-audit-close').onclick      = () => closeModal('audit-backdrop');
       document.getElementById('btn-audit-refresh').onclick    = openAuditModal;
+      document.getElementById('btn-week-builder').onclick     = openWeekBuilder;
+      document.getElementById('btn-week-close').onclick       = () => closeModal('week-backdrop');
+      document.getElementById('btn-week-close-x').onclick     = () => closeModal('week-backdrop');
+      document.getElementById('btn-week-prev').onclick        = () => stepBuilderWeek(-1);
+      document.getElementById('btn-week-next').onclick        = () => stepBuilderWeek(1);
+      document.getElementById('btn-week-today').onclick       = () => { state.builderWeekStart = mondayOfWeek(new Date()); renderWeekBuilder(); };
       document.getElementById('btn-security').onclick           = openSecurityModal;
       document.getElementById('btn-notifications').onclick      = openNotifModal;
       document.getElementById('btn-notif-close').onclick        = () => closeModal('notif-backdrop');
@@ -1817,6 +1914,95 @@
         return '(deleted entry)';
       }
       return '';
+    }
+
+    /* Week Builder — admin schedule view, M-F. Lives in its own modal so
+       it can stay open while Add Entry pops on top; refreshes on any
+       loadEntries() since refresh() also calls renderWeekBuilder when open. */
+    function mondayOfWeek(d) {
+      const date = new Date(d);
+      date.setHours(0, 0, 0, 0);
+      const dow = date.getDay();                  // Sun=0..Sat=6
+      const offset = dow === 0 ? -6 : 1 - dow;    // back up to Monday
+      date.setDate(date.getDate() + offset);
+      return date;
+    }
+
+    function openWeekBuilder() {
+      if (!isAdminMode()) return;
+      if (!state.builderWeekStart) state.builderWeekStart = mondayOfWeek(new Date());
+      renderWeekBuilder();
+      openModal('week-backdrop');
+    }
+
+    function stepBuilderWeek(n) {
+      const d = new Date(state.builderWeekStart);
+      d.setDate(d.getDate() + (n * 7));
+      state.builderWeekStart = d;
+      renderWeekBuilder();
+    }
+
+    function renderWeekBuilder() {
+      const start = state.builderWeekStart;
+      if (!start) return;
+      const friday = new Date(start);
+      friday.setDate(friday.getDate() + 4);
+      document.getElementById('week-label').textContent =
+        `${start.toLocaleDateString('en-US', { month:'short', day:'numeric' })} – ${friday.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}`;
+
+      const grid = document.getElementById('week-grid');
+      grid.innerHTML = '';
+      const todayStr = ymd(new Date());
+
+      for (let i = 0; i < 5; i++) {                 // Mon..Fri
+        const d = new Date(start);
+        d.setDate(d.getDate() + i);
+        const dayStr = ymd(d);
+
+        const col = document.createElement('div');
+        col.className = 'week-col';
+        if (dayStr === todayStr) col.classList.add('today');
+
+        const head = document.createElement('div');
+        head.className = 'week-col-head';
+        head.innerHTML = `
+          <span class="dow">${d.toLocaleDateString('en-US', { weekday:'short' })}</span>
+          <span class="day-num">${d.getDate()}</span>
+        `;
+        col.appendChild(head);
+
+        const chipsWrap = document.createElement('div');
+        chipsWrap.className = 'chips';
+        const entries = entriesOn(dayStr).sort((a, b) => {
+          const ca = TYPE_META[a.event_type]?.category || 'zzz';
+          const cb = TYPE_META[b.event_type]?.category || 'zzz';
+          if (ca !== cb) return ca.localeCompare(cb);
+          return (a.start_date || '').localeCompare(b.start_date || '');
+        });
+        if (entries.length) {
+          for (const e of entries) {
+            const chip = renderChip(e, dayStr);
+            // Re-attach handler so clicking opens detail without leaving the builder visible.
+            chip.addEventListener('click', (ev) => { ev.stopPropagation(); openDetail(e, dayStr); });
+            chipsWrap.appendChild(chip);
+          }
+        } else {
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = 'No entries';
+          chipsWrap.appendChild(empty);
+        }
+        col.appendChild(chipsWrap);
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'add-btn';
+        addBtn.textContent = '+ Add Entry';
+        addBtn.onclick = () => openAddModal({ defaultDate: dayStr });
+        col.appendChild(addBtn);
+
+        grid.appendChild(col);
+      }
     }
 
     async function openAuditModal() {
