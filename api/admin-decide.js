@@ -1,7 +1,8 @@
 import {
   serviceClient, readJson, send, methodGuard, verifyAdminToken,
   TIME_AWAY_TYPES, TYPE_LABEL,
-  timeAwayConflicts, classifyConflict, formatRange, logAdminAction,
+  timeAwayConflicts, classifyConflict, effectiveTimeAwayRange,
+  formatRange, logAdminAction,
 } from './_lib.js';
 import { sendPush } from './_push.js';
 
@@ -38,8 +39,10 @@ export default async function handler(req, res) {
         && entry.member_id
         && TIME_AWAY_TYPES.includes(entry.event_type)
         && !override) {
-      const { dayCounts } = await timeAwayConflicts(
+      const effective = await effectiveTimeAwayRange(
         supa, entry.member_id, entry.start_date, entry.end_date, 'approved');
+      const { dayCounts } = await timeAwayConflicts(
+        supa, entry.member_id, effective.start, effective.end, 'approved');
       const verdict = classifyConflict(dayCounts);
       if (verdict.state === 'block') {
         return send(res, 409, {
@@ -47,6 +50,8 @@ export default async function handler(req, res) {
           reason: verdict.reason,
           blocked_days: verdict.blockedDays,
           override_available: true,
+          chained: effective.chained,
+          effective_range: effective.chained ? { start: effective.start, end: effective.end } : undefined,
         });
       }
     }

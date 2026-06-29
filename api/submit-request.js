@@ -3,7 +3,7 @@ import {
   readJson, send, methodGuard,
   TIME_AWAY_TYPES, TYPE_LABEL,
   isYmd, isHttpUrl,
-  timeAwayConflicts, classifyConflict,
+  timeAwayConflicts, classifyConflict, effectiveTimeAwayRange,
   dayCount, formatRange,
 } from './_lib.js';
 import { sendPush } from './_push.js';
@@ -80,9 +80,14 @@ export default async function handler(req, res) {
     }
   }
 
-  let conflicts;
+  // Run the conflict check against the EFFECTIVE range — the requester's
+  // own pending/approved time-away that touches or abuts this request is
+  // merged in, so a stream of one-day requests can't sidestep the
+  // consecutive-overlap block.
+  let effective, conflicts;
   try {
-    conflicts = await timeAwayConflicts(supa, member.id, start_date, end_date, 'active');
+    effective = await effectiveTimeAwayRange(supa, member.id, start_date, end_date, 'active');
+    conflicts = await timeAwayConflicts(supa, member.id, effective.start, effective.end, 'active');
   } catch (e) {
     console.error('conflict-check', e);
     return send(res, 500, { error: 'server_error' });
@@ -93,6 +98,8 @@ export default async function handler(req, res) {
       error: 'conflict',
       reason: verdict.reason,
       blocked_days: verdict.blockedDays,
+      chained: effective.chained,
+      effective_range: effective.chained ? { start: effective.start, end: effective.end } : undefined,
     });
   }
   // Watch state: require a note explaining the overlap.

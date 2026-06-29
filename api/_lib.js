@@ -167,6 +167,52 @@ export function formatRange(start, end) {
   return start === end ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
 }
 
+// Members were gaming the consecutive-overlap rule by submitting one day
+// at a time across a chunk they wanted off. Chain the requester's own
+// pending+approved time-away entries that touch or abut the new range
+// and treat them as a single effective range for conflict classification.
+// Returns { start, end, chained: bool } where chained is true if the
+// effective range is wider than the input.
+export async function effectiveTimeAwayRange(supabase, requesterId, startDate, endDate, statusFilter = 'active') {
+  const statuses = statusFilter === 'approved' ? ['approved'] : ['approved', 'pending'];
+  const { data, error } = await supabase
+    .from('calendar_entries')
+    .select('id, start_date, end_date')
+    .eq('member_id', requesterId)
+    .in('event_type', TIME_AWAY_TYPES)
+    .in('status', statuses);
+  if (error) throw error;
+
+  const ranges = [[startDate, endDate]];
+  for (const e of (data || [])) ranges.push([e.start_date, e.end_date]);
+  ranges.sort((a, b) => a[0].localeCompare(b[0]));
+
+  // Merge overlapping or adjacent (gap of 0 days) ranges.
+  const merged = [];
+  for (const [s, e] of ranges) {
+    if (!merged.length) { merged.push([s, e]); continue; }
+    const last = merged[merged.length - 1];
+    if (nextDay(last[1]) >= s) {
+      if (e > last[1]) last[1] = e;
+    } else {
+      merged.push([s, e]);
+    }
+  }
+
+  for (const [s, e] of merged) {
+    if (s <= startDate && e >= endDate) {
+      return { start: s, end: e, chained: s !== startDate || e !== endDate };
+    }
+  }
+  return { start: startDate, end: endDate, chained: false };
+}
+
+function nextDay(ymdStr) {
+  const d = new Date(`${ymdStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 // Time-away conflict check. `statusFilter` controls which existing entries
 // count: 'active' = approved + pending; 'approved' = approved only.
 export async function timeAwayConflicts(supabase, requesterId, startDate, endDate, statusFilter = 'active') {
