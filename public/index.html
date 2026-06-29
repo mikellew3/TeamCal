@@ -2377,9 +2377,24 @@
       if (entry.member_id === state.me?.id) chip.classList.add('mine');
 
       const member = entry.member_id ? state.members.find(m => m.id === entry.member_id) : null;
-      // Title wins when present (Events and Coverage Adds rely on this).
-      // Otherwise fall back to the member's first name (Time Away typically).
-      const name = entry.title ? entry.title : (member ? member.name.split(' ')[0] : 'Team');
+      // Coverage Adds with a member: lead with the first name so the
+      // chip reads 'Maeve · M, W, Th, F'. If the title already starts
+      // with the name (e.g. site-suffixed 'Jess @ Waltham'), don't
+      // duplicate. Events keep title-first since they're not member-bound.
+      let name;
+      if (meta.category === 'coverage_adds' && member) {
+        const firstName = member.name.split(' ')[0];
+        const title = (entry.title || '').trim();
+        if (!title) {
+          name = firstName;
+        } else if (title.toLowerCase().startsWith(firstName.toLowerCase())) {
+          name = title;
+        } else {
+          name = `${firstName} · ${title}`;
+        }
+      } else {
+        name = entry.title ? entry.title : (member ? member.name.split(' ')[0] : 'Team');
+      }
       const color = member?.color || 'transparent';
 
       chip.innerHTML = `
