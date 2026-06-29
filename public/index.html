@@ -579,6 +579,36 @@
     }
     *, *::before, *::after { -webkit-tap-highlight-color:transparent; }
 
+    /* ============ DISCUSSION THREAD (in detail modal) ============ */
+    .thread-msg {
+      padding:8px 10px;border-radius:6px;
+      font-size:12px;line-height:1.4;color:var(--ink);
+      max-width:88%;
+    }
+    .thread-msg .author {
+      font-size:10px;letter-spacing:0.05em;text-transform:uppercase;
+      font-weight:600;margin-bottom:2px;color:var(--muted);
+      display:flex;justify-content:space-between;gap:8px;
+    }
+    .thread-msg .author .ts { color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400; }
+    .thread-msg .body { white-space:pre-wrap;word-break:break-word; }
+    .thread-msg.is-member {
+      background:var(--accent-soft);
+      border:1px solid rgba(31,107,107,0.18);
+      align-self:flex-start;
+    }
+    .thread-msg.is-member .author { color:var(--accent-deep); }
+    .thread-msg.is-admin {
+      background:#fff3d4;
+      border:1px solid #e1c98a;
+      align-self:flex-end;
+    }
+    .thread-msg.is-admin .author { color:#7a5a18; }
+    .thread-empty {
+      font-size:11px;color:var(--muted);font-style:italic;
+      padding:8px 0;text-align:center;
+    }
+
     /* ============ WEEK BUILDER (admin modal) ============ */
     .week-x {
       position:absolute;top:14px;right:14px;
@@ -986,6 +1016,21 @@
         <label for="detail-decide-note">Optional note to requester</label>
         <textarea id="detail-decide-note" maxlength="500" rows="2" placeholder="e.g. 'Approved — make it count!' or 'Denied — try moving Fri off the heads-up day.'"></textarea>
         <div style="font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:0.02em;">Included in the push notification and saved on the request.</div>
+      </div>
+      <div class="thread" id="detail-thread" hidden style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line);">
+        <div class="thread-head" style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+          <strong style="font-size:13px;color:var(--ink);">Discussion</strong>
+          <span class="muted" id="detail-thread-count" style="font-size:11px;color:var(--muted);">—</span>
+        </div>
+        <div id="detail-thread-list" style="display:flex;flex-direction:column;gap:8px;max-height:240px;overflow-y:auto;margin-bottom:10px;"></div>
+        <div class="thread-compose" style="display:flex;flex-direction:column;gap:6px;">
+          <textarea id="detail-thread-input" maxlength="1000" rows="2" placeholder="Add a comment — Admin will be notified" style="resize:vertical;"></textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <span style="font-size:10px;color:var(--muted);letter-spacing:0.02em;"><strong style="color:var(--warn);">No patient information.</strong></span>
+            <button type="button" class="primary" id="btn-detail-thread-post">Post</button>
+          </div>
+          <div id="detail-thread-msg" style="font-size:11px;color:var(--neg);"></div>
+        </div>
       </div>
       <div class="modal-actions">
         <div class="left" id="detail-admin-actions" hidden>
@@ -1871,6 +1916,7 @@
       entry_remove_day_delete: 'Removed entry (single day)',
       entry_remove_day_trim: 'Trimmed entry',
       entry_remove_day_split: 'Split entry',
+      entry_message: 'Posted comment',
       member_create: 'Created member',
       member_approve: 'Approved signup',
       member_deny: 'Denied signup',
@@ -2718,7 +2764,107 @@
         removeBtn.textContent = `Remove ${formatDayShort(state.detailDay)}`;
       }
 
+      // Discussion thread: shown when the viewer can see notes (admin OR owner).
+      // No thread on team-wide events (no member_id and admin-only context).
+      const threadWrap = document.getElementById('detail-thread');
+      const canDiscuss = canSeeNotes && (isAdmin || entry.member_id);
+      threadWrap.hidden = !canDiscuss;
+      if (canDiscuss) loadEntryThread(entry.id);
+
       openModal('detail-backdrop');
+    }
+
+    /* ============================================================
+     * ENTRY DISCUSSION THREAD
+     * ============================================================ */
+    async function loadEntryThread(entryId) {
+      const list = document.getElementById('detail-thread-list');
+      const cnt  = document.getElementById('detail-thread-count');
+      const msgEl = document.getElementById('detail-thread-msg');
+      const input = document.getElementById('detail-thread-input');
+      msgEl.textContent = '';
+      input.value = '';
+      list.innerHTML = '<div class="thread-empty">Loading…</div>';
+      cnt.textContent = '';
+
+      const payload = { kind: 'list', entry_id: entryId };
+      const headers = { 'Content-Type': 'application/json' };
+      if (isAdminMode()) payload.admin_token = state.adminToken;
+      else headers['Authorization'] = `Bearer ${state.session.access_token}`;
+
+      try {
+        const r = await fetch('/api/entry-messages', { method: 'POST', headers, body: JSON.stringify(payload) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        const messages = j.messages || [];
+        cnt.textContent = messages.length
+          ? `${messages.length} ${messages.length === 1 ? 'comment' : 'comments'}`
+          : 'No comments yet';
+        list.innerHTML = '';
+        if (!messages.length) {
+          const e = document.createElement('div');
+          e.className = 'thread-empty';
+          e.textContent = 'Start the conversation below.';
+          list.appendChild(e);
+        } else {
+          for (const m of messages) list.appendChild(renderThreadMsg(m));
+          // Auto-scroll to latest
+          requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
+        }
+      } catch (err) {
+        console.error('thread load', err);
+        list.innerHTML = '<div class="thread-empty">Couldn\'t load the discussion.</div>';
+      }
+
+      // Re-bind post button each open (cheap, avoids stale entryId).
+      const btn = document.getElementById('btn-detail-thread-post');
+      btn.disabled = false;
+      btn.onclick = () => postEntryMessage(entryId);
+    }
+
+    function renderThreadMsg(m) {
+      const wrap = document.createElement('div');
+      wrap.className = 'thread-msg ' + (m.author_role === 'admin' ? 'is-admin' : 'is-member');
+      const head = document.createElement('div');
+      head.className = 'author';
+      let authorLabel = m.author_role === 'admin' ? 'Admin' : 'Member';
+      if (m.author_role === 'member' && m.author_id) {
+        const person = state.members.find(x => x.id === m.author_id);
+        if (person) authorLabel = person.name.split(' ')[0];
+      }
+      head.innerHTML = `<span>${escapeHtml(authorLabel)}</span><span class="ts" title="${escapeHtml(new Date(m.created_at).toLocaleString())}">${escapeHtml(relTime(m.created_at))}</span>`;
+      const body = document.createElement('div');
+      body.className = 'body';
+      body.textContent = m.body;
+      wrap.appendChild(head);
+      wrap.appendChild(body);
+      return wrap;
+    }
+
+    async function postEntryMessage(entryId) {
+      const input = document.getElementById('detail-thread-input');
+      const msgEl = document.getElementById('detail-thread-msg');
+      const btn   = document.getElementById('btn-detail-thread-post');
+      const text  = (input.value || '').trim();
+      msgEl.textContent = '';
+      if (!text) { msgEl.textContent = 'Type something first.'; return; }
+      btn.disabled = true;
+      const payload = { kind: 'post', entry_id: entryId, body: text };
+      const headers = { 'Content-Type': 'application/json' };
+      if (isAdminMode()) payload.admin_token = state.adminToken;
+      else headers['Authorization'] = `Bearer ${state.session.access_token}`;
+      try {
+        const r = await fetch('/api/entry-messages', { method: 'POST', headers, body: JSON.stringify(payload) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        input.value = '';
+        await loadEntryThread(entryId);
+      } catch (err) {
+        console.error('thread post', err);
+        msgEl.textContent = `Couldn't post: ${err.message || 'try again'}`;
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     /* ============================================================
@@ -2990,10 +3136,10 @@
         danger: true,
         onConfirm: async () => {
           try {
-            const r = await fetch('/api/admin-delete', {
+            const r = await fetch('/api/admin-update', {
               method:'POST',
               headers:{ 'Content-Type':'application/json' },
-              body: JSON.stringify({ token: state.adminToken, id: entry.id }),
+              body: JSON.stringify({ token: state.adminToken, action: 'delete', id: entry.id }),
             });
             const j = await r.json();
             if (r.status === 401) { adminTokenExpired(); return; }
@@ -3091,10 +3237,10 @@
         return;
       }
       try {
-        const r = await fetch('/api/admin-create', {
+        const r = await fetch('/api/admin-update', {
           method:'POST',
           headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({ token: state.adminToken, entry }),
+          body: JSON.stringify({ token: state.adminToken, action: 'create', entry }),
         });
         const j = await r.json();
         if (r.status === 401) { adminTokenExpired(); return; }
