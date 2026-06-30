@@ -578,6 +578,97 @@
     }
     *, *::before, *::after { -webkit-tap-highlight-color:transparent; }
 
+    /* ============ TIME OFF REPORT ============ */
+    .pto-year-nav {
+      display:flex;align-items:center;justify-content:center;gap:16px;
+      margin:8px 0 14px;
+    }
+    .pto-year-nav button {
+      width:34px;height:34px;padding:0;min-height:0;
+      font-size:14px;line-height:1;
+    }
+    .pto-year-label {
+      font-family:'Source Serif 4',serif;
+      font-size:18px;font-weight:600;color:var(--ink);
+      min-width:80px;text-align:center;
+    }
+    .pto-team-totals {
+      background:var(--paper-warm);
+      border:1px solid var(--line);
+      border-radius:4px;padding:10px 14px;margin-bottom:14px;
+      font-size:12px;color:var(--ink-2);
+      display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;
+    }
+    .pto-team-totals strong { color:var(--ink); }
+    .pto-row {
+      display:grid;grid-template-columns:1.4fr 1fr 1.6fr auto;
+      gap:14px;align-items:center;padding:12px 14px;
+      border:1px solid var(--line);border-radius:4px;
+      margin-bottom:6px;cursor:pointer;
+      transition:background 100ms ease, border-color 100ms ease;
+    }
+    .pto-row:hover { background:var(--paper-warm);border-color:var(--line-strong); }
+    .pto-row .name { font-weight:600;color:var(--ink);font-size:13px;display:flex;align-items:center;gap:8px; }
+    .pto-row .name .dot { width:10px;height:10px;border-radius:50%; }
+    .pto-row .breakdown { font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums; }
+    .pto-row .breakdown strong { color:var(--ink);font-size:13px; }
+    .pto-bar { display:flex;align-items:center;gap:10px;font-size:11px;color:var(--ink-2); }
+    .pto-bar .track { flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden; }
+    .pto-bar .fill { height:100%;background:var(--accent);transition:width 200ms; }
+    .pto-bar .pct { min-width:38px;text-align:right;font-variant-numeric:tabular-nums; }
+    .pto-row .arrow { color:var(--muted);font-size:13px; }
+
+    .pto-detail-stats {
+      display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
+      gap:10px;margin-bottom:18px;
+    }
+    .pto-stat {
+      background:var(--paper-warm);border:1px solid var(--line);border-radius:4px;
+      padding:10px 12px;
+    }
+    .pto-stat .lbl {
+      font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
+      color:var(--muted);font-weight:600;margin-bottom:4px;
+    }
+    .pto-stat .val {
+      font-family:'Source Serif 4',serif;
+      font-size:22px;font-weight:600;color:var(--ink);line-height:1;
+    }
+    .pto-stat .sub { font-size:10px;color:var(--muted);margin-top:4px; }
+
+    .pto-section {
+      margin-bottom:18px;border:1px solid var(--line);border-radius:4px;
+      background:var(--paper);overflow:hidden;
+    }
+    .pto-section-head {
+      padding:10px 14px;background:var(--paper-warm);
+      border-bottom:1px solid var(--line);
+      display:flex;justify-content:space-between;align-items:baseline;
+      font-family:'Source Serif 4',serif;font-size:14px;font-weight:600;color:var(--ink);
+    }
+    .pto-section-head .count { font-size:11px;color:var(--muted);font-family:'Inter'; }
+    .pto-section-body { padding:10px 14px;font-size:12px;color:var(--ink); }
+    .pto-section-body .month-head {
+      font-size:10px;letter-spacing:0.10em;text-transform:uppercase;
+      color:var(--muted);font-weight:600;margin:8px 0 4px;
+    }
+    .pto-section-body .month-head:first-child { margin-top:0; }
+    .pto-day-row {
+      display:flex;justify-content:space-between;align-items:baseline;
+      gap:10px;padding:4px 0;border-bottom:1px solid var(--line);
+      font-variant-numeric:tabular-nums;
+    }
+    .pto-day-row:last-child { border-bottom:none; }
+    .pto-day-row .when { color:var(--ink); }
+    .pto-day-row .count { color:var(--ink-2);font-size:11px;font-weight:500; }
+    .pto-empty { color:var(--muted);font-style:italic;font-size:11px;padding:4px 0; }
+
+    @media (max-width:720px) {
+      .pto-row { grid-template-columns:1fr;gap:6px; }
+      .pto-row .arrow { display:none; }
+      .pto-bar .track { flex:1; }
+    }
+
     /* ============ DISCUSSION THREAD (in detail modal) ============ */
     .thread-msg {
       padding:8px 10px;border-radius:6px;
@@ -845,6 +936,7 @@
       <div style="display:flex;gap:8px;">
         <button class="ghost" id="btn-week-builder">Week Builder</button>
         <button class="ghost" id="btn-discussions">Discussions</button>
+        <button class="ghost" id="btn-pto-report">Time Off Report</button>
         <button class="ghost" id="btn-manage-members">Manage Members</button>
         <button class="ghost" id="btn-audit">Audit Log</button>
       </div>
@@ -952,6 +1044,27 @@
       <div class="modal-actions">
         <button class="ghost" id="btn-audit-close">Close</button>
         <button class="ghost" id="btn-audit-refresh">Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIME OFF REPORT MODAL (admin) -->
+  <div class="modal-backdrop" id="pto-report-backdrop" data-modal>
+    <div class="modal x-wide" role="dialog" aria-modal="true" aria-labelledby="pto-report-title" style="max-width:980px;width:95vw;">
+      <button type="button" class="week-x" id="btn-pto-close-x" aria-label="Close">×</button>
+      <div class="eyebrow">Admin · Time Off Report</div>
+      <h2 id="pto-report-title">Time Off Report</h2>
+      <div class="modal-sub" id="pto-report-sub">Year-to-date by team member. Business days only.</div>
+      <div class="pto-year-nav">
+        <button type="button" class="ghost" id="btn-pto-year-prev">◀</button>
+        <div class="pto-year-label" id="pto-year-label">—</div>
+        <button type="button" class="ghost" id="btn-pto-year-next">▶</button>
+      </div>
+      <div id="pto-list-view"></div>
+      <div id="pto-detail-view" hidden></div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="btn-pto-back" hidden>← Back to roster</button>
+        <button type="button" class="ghost" id="btn-pto-close">Close</button>
       </div>
     </div>
   </div>
@@ -1489,6 +1602,8 @@
       detailEntry: null,
       mfaEnabled: false,
       expandedDay: null,         // YYYY-MM-DD of the day-detail drawer, or null
+      ptoReportYear: null,       // selected year on the Time Off Report (default current)
+      ptoReportMember: null,     // member id when drilled in, or null for the list
     };
     state.viewMonth.setDate(1);
     state.viewMonth.setHours(0, 0, 0, 0);
@@ -1501,6 +1616,7 @@
       cme:      { tag:'CME',      label:'CME',         category:'time_away' },
       pd:       { tag:'PD',       label:'PD',          category:'time_away' },
       taw:      { tag:'',         label:'General',     category:'time_away' },
+      sick:     { tag:'SICK',     label:'Sick',        category:'time_away' },
       note:     { tag:'',         label:'Note',        category:'events' },
       onb:      { tag:'ONB',      label:'Onboarding',  category:'events' },
       shd:      { tag:'SHD',      label:'Shadowing',   category:'events' },
@@ -1510,7 +1626,7 @@
       cov:      { tag:'',         label:'General',     category:'coverage_adds' },
     };
     const CATEGORY_TYPES = {
-      time_away:    ['pto', 'cme', 'taw'],
+      time_away:    ['pto', 'cme', 'taw', 'sick'],
       events:       ['note', 'onb', 'shd'],
       coverage_adds:['per_diem', 'ot', 'swp', 'cov'],
     };
@@ -1747,6 +1863,12 @@
       document.getElementById('btn-audit-refresh').onclick    = openAuditModal;
       document.getElementById('btn-week-builder').onclick     = openWeekBuilder;
       document.getElementById('btn-discussions').onclick      = openDiscussionsModal;
+      document.getElementById('btn-pto-report').onclick       = openPtoReport;
+      document.getElementById('btn-pto-close').onclick        = () => closeModal('pto-report-backdrop');
+      document.getElementById('btn-pto-close-x').onclick      = () => closeModal('pto-report-backdrop');
+      document.getElementById('btn-pto-back').onclick         = () => { state.ptoReportMember = null; renderPtoReport(); };
+      document.getElementById('btn-pto-year-prev').onclick    = () => { state.ptoReportYear--; renderPtoReport(); };
+      document.getElementById('btn-pto-year-next').onclick    = () => { state.ptoReportYear++; renderPtoReport(); };
       document.getElementById('btn-discussions-close').onclick   = () => closeModal('discussions-backdrop');
       document.getElementById('btn-discussions-refresh').onclick = openDiscussionsModal;
       document.getElementById('btn-week-close').onclick       = () => closeModal('week-backdrop');
@@ -2137,6 +2259,263 @@
         console.error('discussions', err);
         list.innerHTML = `<div class="day-overview-empty">Couldn't load discussions.<div class="helper">${escapeHtml(err.message || 'Unknown error')}</div></div>`;
       }
+    }
+
+    /* ============================================================
+     * TIME OFF REPORT (admin)
+     * ============================================================ */
+    const PTO_TYPES_FOR_REPORT = {
+      pto:  { key: 'pto',  label: 'PTO'  },
+      cme:  { key: 'cme',  label: 'CME'  },
+      sick: { key: 'sick', label: 'Sick' },
+    };
+
+    function businessDayCount(startYmd, endYmd) {
+      if (!startYmd || !endYmd || endYmd < startYmd) return 0;
+      let count = 0;
+      const d = new Date(`${startYmd}T00:00:00Z`);
+      const end = new Date(`${endYmd}T00:00:00Z`);
+      while (d <= end) {
+        const dow = d.getUTCDay();
+        if (dow !== 0 && dow !== 6) count++;
+        d.setUTCDate(d.getUTCDate() + 1);
+      }
+      return count;
+    }
+
+    function clipToYear(startYmd, endYmd, year) {
+      const yStart = `${year}-01-01`;
+      const yEnd   = `${year}-12-31`;
+      const s = startYmd < yStart ? yStart : startYmd;
+      const e = endYmd   > yEnd   ? yEnd   : endYmd;
+      if (e < s) return null;
+      return { start: s, end: e };
+    }
+
+    // For each member, gather time-away entries (approved + admin-added) of
+    // each type that touch the given year, splitting at today into taken /
+    // scheduled. Per-diem shifts counted separately. Business days only.
+    function computeMemberStats(memberId, year) {
+      const today = ymd(new Date());
+      const stats = {
+        pto:  { taken: [], scheduled: [], takenDays: 0, scheduledDays: 0 },
+        cme:  { taken: [], scheduled: [], takenDays: 0, scheduledDays: 0 },
+        sick: { taken: [], scheduled: [], takenDays: 0, scheduledDays: 0 },
+        per_diem: { shifts: [], count: 0, days: 0 },
+      };
+      for (const e of state.entries) {
+        if (e.member_id !== memberId) continue;
+        if (e.status === 'denied' || e.status === 'pending') continue;
+
+        if (PTO_TYPES_FOR_REPORT[e.event_type]) {
+          const bucket = stats[e.event_type];
+          const clipped = clipToYear(e.start_date, e.end_date, year);
+          if (!clipped) continue;
+
+          // Split at today into taken vs scheduled portions.
+          if (clipped.end < today) {
+            const days = businessDayCount(clipped.start, clipped.end);
+            if (days > 0) { bucket.taken.push({ ...clipped, days }); bucket.takenDays += days; }
+          } else if (clipped.start > today) {
+            const days = businessDayCount(clipped.start, clipped.end);
+            if (days > 0) { bucket.scheduled.push({ ...clipped, days }); bucket.scheduledDays += days; }
+          } else {
+            // straddles today
+            const takenDays = businessDayCount(clipped.start, today);
+            const tomorrow = (() => {
+              const d = new Date(`${today}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1);
+              return d.toISOString().slice(0, 10);
+            })();
+            const schedDays = businessDayCount(tomorrow, clipped.end);
+            if (takenDays > 0) { bucket.taken.push({ start: clipped.start, end: today, days: takenDays }); bucket.takenDays += takenDays; }
+            if (schedDays > 0) { bucket.scheduled.push({ start: tomorrow, end: clipped.end, days: schedDays }); bucket.scheduledDays += schedDays; }
+          }
+        } else if (e.event_type === 'per_diem') {
+          const clipped = clipToYear(e.start_date, e.end_date, year);
+          if (!clipped) continue;
+          const days = businessDayCount(clipped.start, clipped.end);
+          stats.per_diem.shifts.push({ ...clipped, days });
+          stats.per_diem.count++;
+          stats.per_diem.days += days;
+        }
+      }
+      stats.pto.total  = stats.pto.takenDays  + stats.pto.scheduledDays;
+      stats.cme.total  = stats.cme.takenDays  + stats.cme.scheduledDays;
+      stats.sick.total = stats.sick.takenDays + stats.sick.scheduledDays;
+      return stats;
+    }
+
+    function openPtoReport() {
+      if (!isAdminMode()) return;
+      if (!state.ptoReportYear) state.ptoReportYear = new Date().getFullYear();
+      state.ptoReportMember = null;
+      renderPtoReport();
+      openModal('pto-report-backdrop');
+    }
+
+    function renderPtoReport() {
+      const year = state.ptoReportYear;
+      document.getElementById('pto-year-label').textContent = String(year);
+      const listView   = document.getElementById('pto-list-view');
+      const detailView = document.getElementById('pto-detail-view');
+      const subEl      = document.getElementById('pto-report-sub');
+      const backBtn    = document.getElementById('btn-pto-back');
+      const titleEl    = document.getElementById('pto-report-title');
+
+      if (state.ptoReportMember) {
+        listView.hidden = true;
+        detailView.hidden = false;
+        backBtn.hidden = false;
+        const member = state.members.find(m => m.id === state.ptoReportMember);
+        if (!member) { state.ptoReportMember = null; return renderPtoReport(); }
+        titleEl.textContent = `${member.name}`;
+        subEl.textContent = `${year} — business days only.`;
+        renderPtoMemberDetail(member, year, detailView);
+      } else {
+        listView.hidden = false;
+        detailView.hidden = true;
+        backBtn.hidden = true;
+        titleEl.textContent = 'Time Off Report';
+        subEl.textContent = `${year} — business days only. Tap a member to drill in.`;
+        renderPtoRoster(year, listView);
+      }
+    }
+
+    function renderPtoRoster(year, container) {
+      container.innerHTML = '';
+      const members = state.members.filter(m => m.active);
+      const rows = members.map(m => ({ member: m, stats: computeMemberStats(m.id, year) }));
+      const maxPto = Math.max(1, ...rows.map(r => r.stats.pto.total));
+      rows.sort((a, b) => b.stats.pto.total - a.stats.pto.total);
+
+      // Team totals row
+      const team = {
+        ptoTaken:  rows.reduce((s, r) => s + r.stats.pto.takenDays, 0),
+        ptoSched:  rows.reduce((s, r) => s + r.stats.pto.scheduledDays, 0),
+        cme:       rows.reduce((s, r) => s + r.stats.cme.total, 0),
+        sick:      rows.reduce((s, r) => s + r.stats.sick.total, 0),
+        pd:        rows.reduce((s, r) => s + r.stats.per_diem.count, 0),
+      };
+      const totals = document.createElement('div');
+      totals.className = 'pto-team-totals';
+      totals.innerHTML = `
+        <span>Team PTO: <strong>${team.ptoTaken}</strong> taken · <strong>${team.ptoSched}</strong> scheduled</span>
+        <span>CME: <strong>${team.cme}</strong></span>
+        <span>Sick: <strong>${team.sick}</strong></span>
+        <span>Per Diem shifts: <strong>${team.pd}</strong></span>
+      `;
+      container.appendChild(totals);
+
+      for (const r of rows) {
+        const pct = Math.round((r.stats.pto.total / maxPto) * 100);
+        const row = document.createElement('div');
+        row.className = 'pto-row';
+        row.innerHTML = `
+          <div class="name"><span class="dot" style="background:${escapeHtml(r.member.color || 'transparent')}"></span>${escapeHtml(r.member.name)}</div>
+          <div class="breakdown">PTO: <strong>${r.stats.pto.takenDays}</strong> + <strong>${r.stats.pto.scheduledDays}</strong> = <strong>${r.stats.pto.total}</strong>${r.stats.cme.total ? ` · CME ${r.stats.cme.total}` : ''}${r.stats.sick.total ? ` · Sick ${r.stats.sick.total}` : ''}${r.stats.per_diem.count ? ` · PD ${r.stats.per_diem.count}` : ''}</div>
+          <div class="pto-bar"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
+          <div class="arrow">›</div>
+        `;
+        row.onclick = () => { state.ptoReportMember = r.member.id; renderPtoReport(); };
+        container.appendChild(row);
+      }
+
+      if (!rows.length) {
+        const empty = document.createElement('div');
+        empty.className = 'day-overview-empty';
+        empty.textContent = 'No active members.';
+        container.appendChild(empty);
+      }
+    }
+
+    function renderPtoMemberDetail(member, year, container) {
+      container.innerHTML = '';
+      const stats = computeMemberStats(member.id, year);
+
+      // Team max for relative comparison
+      const allStats = state.members.filter(m => m.active).map(m => computeMemberStats(m.id, year).pto.total);
+      const maxPto = Math.max(1, ...allStats);
+      const pct = Math.round((stats.pto.total / maxPto) * 100);
+
+      // Stat cards
+      const cards = document.createElement('div');
+      cards.className = 'pto-detail-stats';
+      cards.innerHTML = `
+        <div class="pto-stat"><div class="lbl">PTO Taken</div><div class="val">${stats.pto.takenDays}</div><div class="sub">days, business</div></div>
+        <div class="pto-stat"><div class="lbl">PTO Scheduled</div><div class="val">${stats.pto.scheduledDays}</div><div class="sub">days remaining ${year}</div></div>
+        <div class="pto-stat"><div class="lbl">PTO Total</div><div class="val">${stats.pto.total}</div><div class="sub">${pct}% of team max</div></div>
+        <div class="pto-stat"><div class="lbl">CME</div><div class="val">${stats.cme.total}</div><div class="sub">${stats.cme.takenDays} taken · ${stats.cme.scheduledDays} scheduled</div></div>
+        <div class="pto-stat"><div class="lbl">Sick</div><div class="val">${stats.sick.total}</div><div class="sub">${stats.sick.takenDays} taken · ${stats.sick.scheduledDays} scheduled</div></div>
+        <div class="pto-stat"><div class="lbl">Per Diem Shifts</div><div class="val">${stats.per_diem.count}</div><div class="sub">${stats.per_diem.days} day${stats.per_diem.days === 1 ? '' : 's'} covered</div></div>
+      `;
+      container.appendChild(cards);
+
+      // Upcoming this year by month — PTO + CME + Sick scheduled (Sick rare but possible if pre-entered)
+      const upcoming = [
+        ...stats.pto.scheduled.map(r => ({ ...r, type: 'PTO' })),
+        ...stats.cme.scheduled.map(r => ({ ...r, type: 'CME' })),
+        ...stats.sick.scheduled.map(r => ({ ...r, type: 'Sick' })),
+      ].sort((a, b) => a.start.localeCompare(b.start));
+
+      const upSec = document.createElement('div');
+      upSec.className = 'pto-section';
+      upSec.innerHTML = `<div class="pto-section-head">Upcoming this year <span class="count">${upcoming.length} entr${upcoming.length === 1 ? 'y' : 'ies'} · ${upcoming.reduce((s, r) => s + r.days, 0)} days</span></div>`;
+      const upBody = document.createElement('div');
+      upBody.className = 'pto-section-body';
+      if (!upcoming.length) {
+        upBody.innerHTML = '<div class="pto-empty">Nothing scheduled for the rest of the year.</div>';
+      } else {
+        const byMonth = new Map();
+        for (const r of upcoming) {
+          const monthKey = r.start.slice(0, 7);
+          if (!byMonth.has(monthKey)) byMonth.set(monthKey, []);
+          byMonth.get(monthKey).push(r);
+        }
+        for (const [monthKey, items] of byMonth) {
+          const head = document.createElement('div');
+          head.className = 'month-head';
+          head.textContent = new Date(`${monthKey}-01T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+          upBody.appendChild(head);
+          for (const r of items) {
+            const row = document.createElement('div');
+            row.className = 'pto-day-row';
+            const range = r.start === r.end ? formatDayShort(r.start) : `${formatDayShort(r.start)} → ${formatDayShort(r.end)}`;
+            row.innerHTML = `<span class="when">${escapeHtml(r.type)} · ${escapeHtml(range)}</span><span class="count">${r.days} day${r.days === 1 ? '' : 's'}</span>`;
+            upBody.appendChild(row);
+          }
+        }
+      }
+      upSec.appendChild(upBody);
+      container.appendChild(upSec);
+
+      // Helper: per-type taken/scheduled history sections
+      const buildSection = (title, ranges, emptyMsg) => {
+        const sec = document.createElement('div');
+        sec.className = 'pto-section';
+        const totalDays = ranges.reduce((s, r) => s + r.days, 0);
+        sec.innerHTML = `<div class="pto-section-head">${escapeHtml(title)} <span class="count">${ranges.length} entr${ranges.length === 1 ? 'y' : 'ies'} · ${totalDays} days</span></div>`;
+        const body = document.createElement('div');
+        body.className = 'pto-section-body';
+        if (!ranges.length) {
+          body.innerHTML = `<div class="pto-empty">${escapeHtml(emptyMsg)}</div>`;
+        } else {
+          const sorted = [...ranges].sort((a, b) => a.start.localeCompare(b.start));
+          for (const r of sorted) {
+            const row = document.createElement('div');
+            row.className = 'pto-day-row';
+            const range = r.start === r.end ? formatDayShort(r.start) : `${formatDayShort(r.start)} → ${formatDayShort(r.end)}`;
+            row.innerHTML = `<span class="when">${escapeHtml(range)}</span><span class="count">${r.days} day${r.days === 1 ? '' : 's'}</span>`;
+            body.appendChild(row);
+          }
+        }
+        sec.appendChild(body);
+        return sec;
+      };
+
+      container.appendChild(buildSection(`PTO taken (${year})`, stats.pto.taken, 'No PTO taken yet this year.'));
+      container.appendChild(buildSection(`CME taken (${year})`, stats.cme.taken, 'No CME taken yet this year.'));
+      container.appendChild(buildSection(`Sick (${year})`, [...stats.sick.taken, ...stats.sick.scheduled], 'No sick days this year.'));
+      container.appendChild(buildSection(`Per Diem shifts (${year})`, stats.per_diem.shifts, 'No per-diem shifts this year.'));
     }
 
     async function openAuditModal() {
