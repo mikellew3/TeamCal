@@ -1851,7 +1851,15 @@
     function bindStaticHandlers() {
       document.getElementById('btn-prev').onclick  = () => stepMonth(-1);
       document.getElementById('btn-next').onclick  = () => stepMonth(1);
-      document.getElementById('btn-today').onclick = () => { state.viewMonth = firstOfMonth(new Date()); state.expandedDay = null; renderAll(); };
+      document.getElementById('btn-today').onclick = () => {
+        const now = new Date();
+        state.viewMonth = firstOfMonth(now);
+        // Auto-expand today's drawer, but not on weekends since those cells
+        // aren't rendered in the business-week-only grid.
+        const dow = now.getDay();
+        state.expandedDay = (dow === 0 || dow === 6) ? null : ymd(now);
+        renderAll();
+      };
       document.getElementById('btn-request').onclick   = openRequestModal;
       document.getElementById('btn-add-entry').onclick = openAddModal;
       document.getElementById('btn-admin').onclick     = openAdminLogin;
