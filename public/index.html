@@ -1634,6 +1634,7 @@
       note:     { tag:'',         label:'Note',        category:'events' },
       onb:      { tag:'ONB',      label:'Onboarding',  category:'events' },
       shd:      { tag:'SHD',      label:'Shadowing',   category:'events' },
+      int:      { tag:'INT',      label:'Interview',   category:'events' },
       per_diem: { tag:'PER DIEM', label:'Per Diem',    category:'coverage_adds' },
       ot:       { tag:'OT',       label:'OT',          category:'coverage_adds' },
       swp:      { tag:'SWAP',     label:'Swap',        category:'coverage_adds' },
@@ -1641,7 +1642,7 @@
     };
     const CATEGORY_TYPES = {
       time_away:    ['pto', 'cme', 'taw', 'sick'],
-      events:       ['note', 'onb', 'shd'],
+      events:       ['note', 'onb', 'shd', 'int'],
       coverage_adds:['per_diem', 'ot', 'swp', 'cov'],
     };
     const TIME_AWAY_TYPES = CATEGORY_TYPES.time_away;
