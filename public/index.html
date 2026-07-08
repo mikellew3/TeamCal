@@ -3751,15 +3751,15 @@
           headers:{ 'Content-Type':'application/json' },
           body: JSON.stringify({ token: state.adminToken, action: 'create', entry }),
         });
-        const j = await r.json();
+        const j = await r.json().catch(() => ({}));
         if (r.status === 401) { adminTokenExpired(); return; }
-        if (!r.ok) throw new Error(j.error || 'failed');
+        if (!r.ok) throw new Error(j.detail || j.error || `HTTP ${r.status}`);
         toast('Entry created.', 'success');
         closeModal('add-backdrop');
         await refresh();
       } catch (err) {
         console.error(err);
-        toast('Create failed. Try again.', 'error');
+        toast(`Create failed: ${err.message || 'try again'}`, 'error');
       } finally {
         btn.disabled = false;
       }

@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     }
   } catch (err) {
     console.error('admin-update', err);
-    return send(res, 500, { error: 'server_error' });
+    return send(res, 500, { error: 'server_error', detail: String(err?.message || err) });
   }
 }
 
