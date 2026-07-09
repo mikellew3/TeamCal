@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 // Used for non-PTO/non-CME absences like swap days.
 // 'sick' is admin-added (members don't request sick days in advance) but
 // still counts as time-away for visibility/conflict purposes.
-export const TIME_AWAY_TYPES = ['pto', 'cme', 'taw', 'sick'];
+export const TIME_AWAY_TYPES = ['pto', 'cme', 'taw', 'sick', 'fmla'];
 export const EVENT_TYPES     = ['note', 'onb', 'shd', 'int'];
 // 'cov' is the generic coverage type. 'per_diem' and 'swp' remain in the
 // list so legacy rows still load and validate.
@@ -14,7 +14,7 @@ export const COVERAGE_TYPES  = ['per_diem', 'ot', 'swp', 'cov'];
 export const ALL_TYPES = [...TIME_AWAY_TYPES, ...EVENT_TYPES, ...COVERAGE_TYPES];
 
 export const TYPE_LABEL = {
-  pto: 'PTO', cme: 'CME', taw: 'General', sick: 'Sick',
+  pto: 'PTO', cme: 'CME', taw: 'General', sick: 'Sick', fmla: 'FMLA',
   note: 'Note', onb: 'Onboarding', shd: 'Shadowing', int: 'Interview',
   per_diem: 'Per Diem', ot: 'OT', swp: 'Swap', cov: 'General',
 };

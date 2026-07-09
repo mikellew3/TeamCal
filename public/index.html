@@ -1631,6 +1631,7 @@
       pd:       { tag:'PD',       label:'PD',          category:'time_away' },
       taw:      { tag:'',         label:'General',     category:'time_away' },
       sick:     { tag:'SICK',     label:'Sick',        category:'time_away' },
+      fmla:     { tag:'FMLA',     label:'FMLA',        category:'time_away' },
       note:     { tag:'',         label:'Note',        category:'events' },
       onb:      { tag:'ONB',      label:'Onboarding',  category:'events' },
       shd:      { tag:'SHD',      label:'Shadowing',   category:'events' },
@@ -1641,7 +1642,7 @@
       cov:      { tag:'',         label:'General',     category:'coverage_adds' },
     };
     const CATEGORY_TYPES = {
-      time_away:    ['pto', 'cme', 'taw', 'sick'],
+      time_away:    ['pto', 'cme', 'taw', 'sick', 'fmla'],
       events:       ['note', 'onb', 'shd', 'int'],
       coverage_adds:['per_diem', 'ot', 'swp', 'cov'],
     };
@@ -2291,6 +2292,7 @@
       pto:  { key: 'pto',  label: 'PTO'  },
       cme:  { key: 'cme',  label: 'CME'  },
       sick: { key: 'sick', label: 'Sick' },
+      fmla: { key: 'fmla', label: 'FMLA' },
     };
 
     function businessDayCount(startYmd, endYmd) {
@@ -2324,6 +2326,7 @@
         pto:  { taken: [], scheduled: [], takenDays: 0, scheduledDays: 0 },
         cme:  { taken: [], scheduled: [], takenDays: 0, scheduledDays: 0 },
         sick: { taken: [], scheduled: [], takenDays: 0, scheduledDays: 0 },
+        fmla: { taken: [], scheduled: [], takenDays: 0, scheduledDays: 0 },
         per_diem: { shifts: [], count: 0, days: 0 },
       };
       for (const e of state.entries) {
@@ -2365,6 +2368,7 @@
       stats.pto.total  = stats.pto.takenDays  + stats.pto.scheduledDays;
       stats.cme.total  = stats.cme.takenDays  + stats.cme.scheduledDays;
       stats.sick.total = stats.sick.takenDays + stats.sick.scheduledDays;
+      stats.fmla.total = stats.fmla.takenDays + stats.fmla.scheduledDays;
       return stats;
     }
 
@@ -2417,6 +2421,7 @@
         ptoSched:  rows.reduce((s, r) => s + r.stats.pto.scheduledDays, 0),
         cme:       rows.reduce((s, r) => s + r.stats.cme.total, 0),
         sick:      rows.reduce((s, r) => s + r.stats.sick.total, 0),
+        fmla:      rows.reduce((s, r) => s + r.stats.fmla.total, 0),
         pd:        rows.reduce((s, r) => s + r.stats.per_diem.count, 0),
       };
       const totals = document.createElement('div');
@@ -2425,6 +2430,7 @@
         <span>Team PTO: <strong>${team.ptoTaken}</strong> taken · <strong>${team.ptoSched}</strong> scheduled</span>
         <span>CME: <strong>${team.cme}</strong></span>
         <span>Sick: <strong>${team.sick}</strong></span>
+        ${team.fmla ? `<span>FMLA: <strong>${team.fmla}</strong></span>` : ''}
         <span>Per Diem shifts: <strong>${team.pd}</strong></span>
       `;
       container.appendChild(totals);
@@ -2435,7 +2441,7 @@
         row.className = 'pto-row';
         row.innerHTML = `
           <div class="name"><span class="dot" style="background:${escapeHtml(r.member.color || 'transparent')}"></span>${escapeHtml(r.member.name)}</div>
-          <div class="breakdown">PTO: <strong>${r.stats.pto.takenDays}</strong> + <strong>${r.stats.pto.scheduledDays}</strong> = <strong>${r.stats.pto.total}</strong>${r.stats.cme.total ? ` · CME ${r.stats.cme.total}` : ''}${r.stats.sick.total ? ` · Sick ${r.stats.sick.total}` : ''}${r.stats.per_diem.count ? ` · PD ${r.stats.per_diem.count}` : ''}</div>
+          <div class="breakdown">PTO: <strong>${r.stats.pto.takenDays}</strong> + <strong>${r.stats.pto.scheduledDays}</strong> = <strong>${r.stats.pto.total}</strong>${r.stats.cme.total ? ` · CME ${r.stats.cme.total}` : ''}${r.stats.sick.total ? ` · Sick ${r.stats.sick.total}` : ''}${r.stats.fmla.total ? ` · FMLA ${r.stats.fmla.total}` : ''}${r.stats.per_diem.count ? ` · PD ${r.stats.per_diem.count}` : ''}</div>
           <div class="pto-bar"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
           <div class="arrow">›</div>
         `;
@@ -2469,6 +2475,7 @@
         <div class="pto-stat"><div class="lbl">PTO Total</div><div class="val">${stats.pto.total}</div><div class="sub">${pct}% of team max</div></div>
         <div class="pto-stat"><div class="lbl">CME</div><div class="val">${stats.cme.total}</div><div class="sub">${stats.cme.takenDays} taken · ${stats.cme.scheduledDays} scheduled</div></div>
         <div class="pto-stat"><div class="lbl">Sick</div><div class="val">${stats.sick.total}</div><div class="sub">${stats.sick.takenDays} taken · ${stats.sick.scheduledDays} scheduled</div></div>
+        <div class="pto-stat"><div class="lbl">FMLA</div><div class="val">${stats.fmla.total}</div><div class="sub">${stats.fmla.takenDays} taken · ${stats.fmla.scheduledDays} scheduled</div></div>
         <div class="pto-stat"><div class="lbl">Per Diem Shifts</div><div class="val">${stats.per_diem.count}</div><div class="sub">${stats.per_diem.days} day${stats.per_diem.days === 1 ? '' : 's'} covered</div></div>
       `;
       container.appendChild(cards);
@@ -2478,6 +2485,7 @@
         ...stats.pto.scheduled.map(r => ({ ...r, type: 'PTO' })),
         ...stats.cme.scheduled.map(r => ({ ...r, type: 'CME' })),
         ...stats.sick.scheduled.map(r => ({ ...r, type: 'Sick' })),
+        ...stats.fmla.scheduled.map(r => ({ ...r, type: 'FMLA' })),
       ].sort((a, b) => a.start.localeCompare(b.start));
 
       const upSec = document.createElement('div');
@@ -2538,6 +2546,7 @@
       container.appendChild(buildSection(`PTO taken (${year})`, stats.pto.taken, 'No PTO taken yet this year.'));
       container.appendChild(buildSection(`CME taken (${year})`, stats.cme.taken, 'No CME taken yet this year.'));
       container.appendChild(buildSection(`Sick (${year})`, [...stats.sick.taken, ...stats.sick.scheduled], 'No sick days this year.'));
+      container.appendChild(buildSection(`FMLA (${year})`, [...stats.fmla.taken, ...stats.fmla.scheduled], 'No FMLA days this year.'));
       container.appendChild(buildSection(`Per Diem shifts (${year})`, stats.per_diem.shifts, 'No per-diem shifts this year.'));
     }
 
