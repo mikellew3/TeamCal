@@ -178,11 +178,14 @@ export function formatRange(start, end) {
 // effective range is wider than the input.
 export async function effectiveTimeAwayRange(supabase, requesterId, startDate, endDate, statusFilter = 'active') {
   const statuses = statusFilter === 'approved' ? ['approved'] : ['approved', 'pending'];
+  // Swaps are net-zero for coverage purposes, so they don't chain into
+  // an adjacent PTO/CME/etc. request's effective range.
+  const chainableTypes = TIME_AWAY_TYPES.filter(t => t !== 'swp_off');
   const { data, error } = await supabase
     .from('calendar_entries')
     .select('id, start_date, end_date')
     .eq('member_id', requesterId)
-    .in('event_type', TIME_AWAY_TYPES)
+    .in('event_type', chainableTypes)
     .in('status', statuses);
   if (error) throw error;
 

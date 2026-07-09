@@ -2666,10 +2666,13 @@
       let myMonthDays = 0, pending = 0, myYTD = 0;
 
       const isAdmin = isAdminMode();
+      // Swaps are a wash — the member's off day is offset by a covering day —
+      // so exclude 'swp_off' from anything that "counts as a day off".
+      const countsAsDayOff = (t) => TIME_AWAY_TYPES.includes(t) && t !== 'swp_off';
       for (const e of state.entries) {
         // Pending KPI: admin sees all, members only see their own.
         if (e.status === 'pending' && (isAdmin || e.member_id === state.me.id)) pending++;
-        if (TIME_AWAY_TYPES.includes(e.event_type) && e.member_id === state.me.id && e.status === 'approved') {
+        if (countsAsDayOff(e.event_type) && e.member_id === state.me.id && e.status === 'approved') {
           myMonthDays += daysOverlap(e.start_date, e.end_date, monthStart, monthEnd);
           if (e.event_type === 'pto') {
             myYTD += daysOverlap(e.start_date, e.end_date, yearStart, yearEnd);
@@ -2677,11 +2680,11 @@
         }
       }
 
-      // Off Today: distinct members + ordered names.
+      // Off Today: distinct members + ordered names. Swaps excluded.
       const offTodayIds = new Set();
       const offTodayNames = [];
       for (const e of state.entries) {
-        if (TIME_AWAY_TYPES.includes(e.event_type)
+        if (countsAsDayOff(e.event_type)
             && e.status === 'approved'
             && e.member_id
             && today >= e.start_date && today <= e.end_date
