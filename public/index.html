@@ -1433,6 +1433,11 @@
           <input id="newm-email" type="email" placeholder="Email" />
           <input id="newm-color" type="text" placeholder="Color hex (optional — auto-picked if blank)" />
           <input id="newm-password" type="text" placeholder="Temporary password (min 8 — they'll reset)" />
+          <select id="newm-fte" class="full">
+            <option value="1">Full-time (1.0 FTE)</option>
+            <option value="0.5">Half-time (0.5 FTE)</option>
+            <option value="0">Per Diem</option>
+          </select>
           <div class="full" style="display:flex;justify-content:flex-end;gap:8px;align-items:center;">
             <span id="newm-msg" style="font-size:11px;color:var(--muted);"></span>
             <button id="btn-newm-create" type="button">Create &amp; Approve</button>
@@ -1474,6 +1479,14 @@
       <div class="field">
         <label for="editmember-color">Color hex</label>
         <input id="editmember-color" type="text" placeholder="#1f6b6b" />
+      </div>
+      <div class="field">
+        <label for="editmember-fte">Status</label>
+        <select id="editmember-fte">
+          <option value="1">Full-time (1.0 FTE)</option>
+          <option value="0.5">Half-time (0.5 FTE)</option>
+          <option value="0">Per Diem</option>
+        </select>
       </div>
       <div class="modal-actions">
         <button type="button" class="ghost" id="btn-editmember-cancel">Cancel</button>
@@ -2411,7 +2424,10 @@
 
     function renderPtoRoster(year, container) {
       container.innerHTML = '';
-      const members = state.members.filter(m => m.active);
+      // Per diems (fte === 0) don't accrue paid time off, so exclude them
+      // from the roster comparison — utilization is only meaningful among
+      // FTE-carrying members.
+      const members = state.members.filter(m => m.active && Number(m.fte ?? 1) > 0);
       const rows = members.map(m => ({ member: m, stats: computeMemberStats(m.id, year) }));
       const maxPto = Math.max(1, ...rows.map(r => r.stats.pto.total));
       rows.sort((a, b) => b.stats.pto.total - a.stats.pto.total);
@@ -2462,8 +2478,9 @@
       container.innerHTML = '';
       const stats = computeMemberStats(member.id, year);
 
-      // Team max for relative comparison
-      const allStats = state.members.filter(m => m.active).map(m => computeMemberStats(m.id, year).pto.total);
+      // Team max for relative comparison — FTE-carrying members only.
+      const allStats = state.members.filter(m => m.active && Number(m.fte ?? 1) > 0)
+        .map(m => computeMemberStats(m.id, year).pto.total);
       const maxPto = Math.max(1, ...allStats);
       const pct = Math.round((stats.pto.total / maxPto) * 100);
 
@@ -4225,6 +4242,12 @@
       const badge = kind === 'pending' ? '<span class="badge pending">Pending</span>'
                   : kind === 'inactive' ? '<span class="badge inactive">Inactive</span>'
                   : '';
+      const fte = Number(m.fte ?? 1);
+      const fteBadge = fte === 0
+        ? '<span class="badge fte-pd" style="background:#e8ecf4;color:#3a4a7a;">PD</span>'
+        : fte === 0.5
+        ? '<span class="badge fte-half" style="background:#f4ecdc;color:#7a4e2d;">0.5 FTE</span>'
+        : '';
       const actions = kind === 'pending'
         ? `<button data-act="approve" data-id="${m.id}" class="primary">Approve</button>
            <button data-act="deny"    data-id="${m.id}" class="danger">Deny</button>
@@ -4240,7 +4263,7 @@
         <div class="who">
           <span class="dot" style="background:${escapeHtml(m.color || '#888')}"></span>
           <div class="meta">
-            <div class="name">${escapeHtml(m.name)}${badge}</div>
+            <div class="name">${escapeHtml(m.name)}${badge}${fteBadge}</div>
             <div class="email">${escapeHtml(m.email)}</div>
           </div>
         </div>
@@ -4256,6 +4279,7 @@
         document.getElementById('editmember-name').value  = member.name || '';
         document.getElementById('editmember-email').value = member.email || '';
         document.getElementById('editmember-color').value = member.color || '';
+        document.getElementById('editmember-fte').value = String(member.fte ?? 1);
         document.getElementById('editmember-msg').textContent = '';
         openModal('editmember-backdrop');
         return;
@@ -4309,6 +4333,7 @@
       const name  = document.getElementById('editmember-name').value.trim();
       const email = document.getElementById('editmember-email').value.trim();
       const color = document.getElementById('editmember-color').value.trim();
+      const fte   = Number(document.getElementById('editmember-fte').value);
       const msg   = document.getElementById('editmember-msg');
       msg.textContent = '';
       if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) {
@@ -4318,7 +4343,7 @@
       try {
         const r = await fetch('/api/admin-member-action', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: state.adminToken, action: 'update', id, name, email, color }),
+          body: JSON.stringify({ token: state.adminToken, action: 'update', id, name, email, color, fte }),
         });
         const j = await r.json().catch(() => ({}));
         if (r.status === 401) { adminTokenExpired(); return; }
@@ -4359,6 +4384,7 @@
       const email = document.getElementById('newm-email').value.trim();
       const color = document.getElementById('newm-color').value.trim() || null;
       const password = document.getElementById('newm-password').value;
+      const fte = Number(document.getElementById('newm-fte').value);
       const msg = document.getElementById('newm-msg');
       msg.style.color = 'var(--neg)';
       if (!name || name.length < 2) { msg.textContent = 'Name required.'; return; }
@@ -4370,7 +4396,7 @@
       try {
         const r = await fetch('/api/admin-member-action', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: state.adminToken, action: 'create', name, email, color, password }),
+          body: JSON.stringify({ token: state.adminToken, action: 'create', name, email, color, password, fte }),
         });
         const j = await r.json().catch(() => ({}));
         if (r.status === 401) { adminTokenExpired(); return; }

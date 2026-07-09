@@ -57,12 +57,14 @@ async function create(supa, body, res) {
     throw createErr;
   }
 
+  const fte = normalizeFte(body?.fte);
   const { data: row, error: tmErr } = await supa.from('team_members').insert({
     auth_user_id: created.user.id,
     name, email, color,
     active: true,
     signup_pending: false,
     must_change_password: true,
+    fte,
   }).select('*').single();
   if (tmErr) {
     await supa.auth.admin.deleteUser(created.user.id).catch(() => {});
@@ -117,6 +119,7 @@ async function update(supa, body, res) {
   if (typeof body.name === 'string' && body.name.trim()) patch.name = body.name.trim();
   if (typeof body.email === 'string' && body.email.includes('@')) patch.email = body.email.trim().toLowerCase();
   if (typeof body.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.color)) patch.color = body.color;
+  if ('fte' in body) patch.fte = normalizeFte(body.fte);
   if (Object.keys(patch).length === 0) return send(res, 400, { error: 'nothing_to_update' });
 
   // If email is changing, also update the auth user.
@@ -160,4 +163,11 @@ async function hardDelete(supa, body, res) {
   if (error) throw error;
   logAdminAction(supa, { actor: null, action: 'member_delete', target_type: 'team_member', target_id: id, payload: { auth_user_id: row.auth_user_id } });
   return send(res, 200, { ok: true });
+}
+
+// FTE: 1.0 full-time, 0.5 half-time, 0 per diem. Anything else falls back to 1.0.
+function normalizeFte(v) {
+  const n = Number(v);
+  if (n === 1 || n === 0.5 || n === 0) return n;
+  return 1.0;
 }
