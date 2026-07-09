@@ -25,7 +25,7 @@ export default async function handler(req, res) {
 
     const { data, error } = await supa
       .from('team_members')
-      .select('id, name, email, color, active, signup_pending, must_change_password, auth_user_id, created_at')
+      .select('id, name, email, color, active, signup_pending, must_change_password, auth_user_id, created_at, fte')
       .order('signup_pending', { ascending: false })
       .order('active', { ascending: false })
       .order('name', { ascending: true });

@@ -1819,7 +1819,7 @@
     async function loadMembers() {
       const { data, error } = await state.supabase
         .from('team_members')
-        .select('id, name, email, color, active, auth_user_id')
+        .select('id, name, email, color, active, auth_user_id, fte')
         .order('name');
       if (error) throw error;
       state.members = data || [];
