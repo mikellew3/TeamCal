@@ -2935,6 +2935,11 @@
       } else {
         name = entry.title ? entry.title : (member ? member.name.split(' ')[0] : 'Team');
       }
+      // Swap chips always spell out which side of the swap this is, so a
+      // pair of chips in the same week reads 'Matt · Here' + 'Matt · Off'
+      // at a glance regardless of category color.
+      if (entry.event_type === 'swp'     && !/(·|-)\s*here\b/i.test(name)) name = `${name} · Here`;
+      if (entry.event_type === 'swp_off' && !/(·|-)\s*off\b/i.test(name))  name = `${name} · Off`;
       const color = member?.color || 'transparent';
 
       chip.innerHTML = `
