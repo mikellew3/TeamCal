@@ -2428,9 +2428,17 @@
       // from the roster comparison — utilization is only meaningful among
       // FTE-carrying members.
       const members = state.members.filter(m => m.active && Number(m.fte ?? 1) > 0);
-      const rows = members.map(m => ({ member: m, stats: computeMemberStats(m.id, year) }));
-      const maxPto = Math.max(1, ...rows.map(r => r.stats.pto.total));
-      rows.sort((a, b) => b.stats.pto.total - a.stats.pto.total);
+      // Weighted PTO = raw days / FTE, so a half-timer's 5 days ranks the
+      // same as a full-timer's 10. Utilization bar uses weighted; the raw
+      // day counts stay visible for accounting.
+      const rows = members.map(m => {
+        const stats = computeMemberStats(m.id, year);
+        const fte = Number(m.fte ?? 1);
+        const weightedPto = fte > 0 ? stats.pto.total / fte : stats.pto.total;
+        return { member: m, stats, fte, weightedPto };
+      });
+      const maxWeighted = Math.max(1, ...rows.map(r => r.weightedPto));
+      rows.sort((a, b) => b.weightedPto - a.weightedPto);
 
       // Team totals row
       const team = {
@@ -2453,12 +2461,18 @@
       container.appendChild(totals);
 
       for (const r of rows) {
-        const pct = Math.round((r.stats.pto.total / maxPto) * 100);
+        const pct = Math.round((r.weightedPto / maxWeighted) * 100);
+        const fteBadge = r.fte === 0.5
+          ? '<span style="background:#f4ecdc;color:#7a4e2d;font-size:9px;font-weight:600;padding:2px 6px;border-radius:10px;margin-left:6px;letter-spacing:0.05em;">0.5 FTE</span>'
+          : '';
+        const weightedHint = r.fte < 1
+          ? ` <span style="color:var(--muted);font-size:10px;">(≈ ${(Math.round(r.weightedPto * 10) / 10)} weighted)</span>`
+          : '';
         const row = document.createElement('div');
         row.className = 'pto-row';
         row.innerHTML = `
-          <div class="name"><span class="dot" style="background:${escapeHtml(r.member.color || 'transparent')}"></span>${escapeHtml(r.member.name)}</div>
-          <div class="breakdown">PTO: <strong>${r.stats.pto.takenDays}</strong> + <strong>${r.stats.pto.scheduledDays}</strong> = <strong>${r.stats.pto.total}</strong>${r.stats.cme.total ? ` · CME ${r.stats.cme.total}` : ''}${r.stats.sick.total ? ` · Sick ${r.stats.sick.total}` : ''}${r.stats.fmla.total ? ` · FMLA ${r.stats.fmla.total}` : ''}${r.stats.per_diem.count ? ` · PD ${r.stats.per_diem.count}` : ''}</div>
+          <div class="name"><span class="dot" style="background:${escapeHtml(r.member.color || 'transparent')}"></span>${escapeHtml(r.member.name)}${fteBadge}</div>
+          <div class="breakdown">PTO: <strong>${r.stats.pto.takenDays}</strong> + <strong>${r.stats.pto.scheduledDays}</strong> = <strong>${r.stats.pto.total}</strong>${weightedHint}${r.stats.cme.total ? ` · CME ${r.stats.cme.total}` : ''}${r.stats.sick.total ? ` · Sick ${r.stats.sick.total}` : ''}${r.stats.fmla.total ? ` · FMLA ${r.stats.fmla.total}` : ''}${r.stats.per_diem.count ? ` · PD ${r.stats.per_diem.count}` : ''}</div>
           <div class="pto-bar"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
           <div class="arrow">›</div>
         `;
@@ -2478,11 +2492,19 @@
       container.innerHTML = '';
       const stats = computeMemberStats(member.id, year);
 
-      // Team max for relative comparison — FTE-carrying members only.
-      const allStats = state.members.filter(m => m.active && Number(m.fte ?? 1) > 0)
-        .map(m => computeMemberStats(m.id, year).pto.total);
-      const maxPto = Math.max(1, ...allStats);
-      const pct = Math.round((stats.pto.total / maxPto) * 100);
+      // Team max for relative comparison — FTE-carrying members only, PTO
+      // weighted by 1/FTE so a half-timer's day counts double against a
+      // full-timer's when ranking utilization.
+      const myFte = Number(member.fte ?? 1);
+      const myWeighted = myFte > 0 ? stats.pto.total / myFte : stats.pto.total;
+      const allWeighted = state.members.filter(m => m.active && Number(m.fte ?? 1) > 0)
+        .map(m => {
+          const s = computeMemberStats(m.id, year);
+          const f = Number(m.fte ?? 1);
+          return f > 0 ? s.pto.total / f : s.pto.total;
+        });
+      const maxWeighted = Math.max(1, ...allWeighted);
+      const pct = Math.round((myWeighted / maxWeighted) * 100);
 
       // Stat cards
       const cards = document.createElement('div');
@@ -2490,7 +2512,7 @@
       cards.innerHTML = `
         <div class="pto-stat"><div class="lbl">PTO Taken</div><div class="val">${stats.pto.takenDays}</div><div class="sub">days, business</div></div>
         <div class="pto-stat"><div class="lbl">PTO Scheduled</div><div class="val">${stats.pto.scheduledDays}</div><div class="sub">days remaining ${year}</div></div>
-        <div class="pto-stat"><div class="lbl">PTO Total</div><div class="val">${stats.pto.total}</div><div class="sub">${pct}% of team max</div></div>
+        <div class="pto-stat"><div class="lbl">PTO Total</div><div class="val">${stats.pto.total}</div><div class="sub">${myFte < 1 ? `≈ ${Math.round(myWeighted * 10) / 10} weighted · ` : ''}${pct}% of team max</div></div>
         <div class="pto-stat"><div class="lbl">CME</div><div class="val">${stats.cme.total}</div><div class="sub">${stats.cme.takenDays} taken · ${stats.cme.scheduledDays} scheduled</div></div>
         <div class="pto-stat"><div class="lbl">Sick</div><div class="val">${stats.sick.total}</div><div class="sub">${stats.sick.takenDays} taken · ${stats.sick.scheduledDays} scheduled</div></div>
         <div class="pto-stat"><div class="lbl">FMLA</div><div class="val">${stats.fmla.total}</div><div class="sub">${stats.fmla.takenDays} taken · ${stats.fmla.scheduledDays} scheduled</div></div>
