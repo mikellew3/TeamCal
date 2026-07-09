@@ -931,7 +931,7 @@
     <div class="kpis" id="kpis">
       <div class="kpi"><div class="lbl">My Days Off This Month</div><div class="val" id="kpi-month">0</div><div class="sub">Your approved time away · current month</div></div>
       <div class="kpi"><div class="lbl">Pending Requests</div><div class="val" id="kpi-pending">0</div><div class="sub" id="kpi-pending-sub">Awaiting decision</div></div>
-      <div class="kpi"><div class="lbl">Your PTO YTD</div><div class="val" id="kpi-mypto">0</div><div class="sub">Approved PTO days year-to-date</div></div>
+      <div class="kpi"><div class="lbl">My Days Off YTD</div><div class="val" id="kpi-mypto">0</div><div class="sub">All approved time away · year-to-date</div></div>
       <div class="kpi"><div class="lbl">Off Today</div><div class="val names" id="kpi-offtoday"><span class="count">0</span><span id="kpi-offtoday-names">No one off today</span></div></div>
     </div>
 
@@ -2674,9 +2674,7 @@
         if (e.status === 'pending' && (isAdmin || e.member_id === state.me.id)) pending++;
         if (countsAsDayOff(e.event_type) && e.member_id === state.me.id && e.status === 'approved') {
           myMonthDays += daysOverlap(e.start_date, e.end_date, monthStart, monthEnd);
-          if (e.event_type === 'pto') {
-            myYTD += daysOverlap(e.start_date, e.end_date, yearStart, yearEnd);
-          }
+          myYTD       += daysOverlap(e.start_date, e.end_date, yearStart, yearEnd);
         }
       }
 
