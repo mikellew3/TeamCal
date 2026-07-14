@@ -52,6 +52,7 @@ async function handleCreate(supa, body, res) {
   const isTimeAway = TIME_AWAY_TYPES.includes(e.event_type);
   const status = isTimeAway && ['pending', 'approved', 'denied'].includes(e.status) ? e.status : 'approved';
   const conferenceLink = isHttpUrl(e.conference_link) ? e.conference_link.trim() : null;
+  const attachmentPath = (typeof e.attachment_path === 'string' && e.attachment_path.trim()) ? e.attachment_path.trim() : null;
 
   const { data, error } = await supa
     .from('calendar_entries')
@@ -63,6 +64,7 @@ async function handleCreate(supa, body, res) {
       end_date: e.end_date,
       notes: (typeof e.notes === 'string' && e.notes.trim()) ? e.notes.trim() : null,
       conference_link: conferenceLink,
+      attachment_path: attachmentPath,
       status,
       decided_at: status === 'pending' ? null : new Date().toISOString(),
       decided_by: status === 'pending' ? null : 'admin',
@@ -105,6 +107,10 @@ async function handleUpdate(supa, body, res) {
   }
   if ('conference_link' in patch) {
     update.conference_link = isHttpUrl(patch.conference_link) ? patch.conference_link.trim() : null;
+  }
+  if ('attachment_path' in patch) {
+    const p = patch.attachment_path;
+    update.attachment_path = (typeof p === 'string' && p.trim()) ? p.trim() : null;
   }
   if ('status' in patch) {
     if (!['pending', 'approved', 'denied'].includes(patch.status)) return send(res, 400, { error: 'invalid_status' });

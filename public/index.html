@@ -1147,6 +1147,7 @@
           <tr><td class="label">Type</td><td id="detail-type">—</td></tr>
           <tr><td class="label">Range</td><td id="detail-range">—</td></tr>
           <tr id="detail-conf-row" hidden><td class="label">Conference</td><td id="detail-conf" class="conf-link">—</td></tr>
+          <tr id="detail-attach-row" hidden><td class="label">Attachment</td><td id="detail-attach" class="conf-link">—</td></tr>
           <tr id="detail-notes-row"><td class="label">Notes</td><td id="detail-notes" class="note">—</td></tr>
           <tr id="detail-decision-row" hidden><td class="label">Admin note</td><td id="detail-decision" class="note">—</td></tr>
           <tr id="detail-submitted-row"><td class="label">Submitted</td><td id="detail-submitted">—</td></tr>
@@ -1278,6 +1279,11 @@
           <label for="add-conf">Conference link (optional for admin)</label>
           <input id="add-conf" type="url" placeholder="https://conference.example.com" />
         </div>
+        <div class="field" id="add-attach-field" hidden>
+          <label for="add-attach">Attachment (CV, PDF, etc.)</label>
+          <input id="add-attach" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+          <div id="add-attach-status" style="font-size:11px;color:var(--muted);margin-top:4px;"></div>
+        </div>
         <div class="field-row">
           <div class="field">
             <label for="add-start">Start date</label>
@@ -1351,6 +1357,12 @@
         <div class="field" id="edit-conf-field" hidden>
           <label for="edit-conf">Conference link</label>
           <input id="edit-conf" type="url" placeholder="https://conference.example.com" />
+        </div>
+        <div class="field" id="edit-attach-field" hidden>
+          <label for="edit-attach">Attachment (CV, PDF, etc.)</label>
+          <div id="edit-attach-current" style="font-size:12px;color:var(--ink-2);margin-bottom:6px;"></div>
+          <input id="edit-attach" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+          <div id="edit-attach-status" style="font-size:11px;color:var(--muted);margin-top:4px;"></div>
         </div>
         <div class="field-row">
           <div class="field">
@@ -2013,21 +2025,22 @@
       updateOnlineState();
     }
 
-    // Types where a URL attachment makes sense — conference agenda for CME,
-    // candidate CV for Interview.
-    const LINK_TYPES = new Set(['cme', 'int']);
+    // CME entries can carry an external conference URL; nothing else does.
+    const LINK_TYPES = new Set(['cme']);
+    // Types that accept a file upload (stored in the Supabase Storage
+    // 'entry-attachments' bucket). Interview is the primary use case
+    // (candidate CVs); admin can attach files to CME as well.
+    const FILE_TYPES = new Set(['cme', 'int']);
+    const ATTACH_BUCKET = 'entry-attachments';
     function linkLabelFor(t) {
       if (t === 'cme') return 'Conference link';
-      if (t === 'int') return 'CV / attachment link';
-      return 'Attachment link';
+      return 'Link';
     }
     function updateAddCmeAndStatusVisibility() {
       const t = document.getElementById('add-type').value;
       const cat = document.getElementById('add-category').value;
-      const confField = document.getElementById('add-conf-field');
-      confField.hidden = !LINK_TYPES.has(t);
-      const confLbl = confField.querySelector('label');
-      if (confLbl) confLbl.textContent = linkLabelFor(t) + (t === 'cme' ? '' : ' (optional)');
+      document.getElementById('add-conf-field').hidden = !LINK_TYPES.has(t);
+      document.getElementById('add-attach-field').hidden = !FILE_TYPES.has(t);
       // Status only meaningful for time_away.
       document.getElementById('add-status-field').hidden = cat !== 'time_away';
       // Site only meaningful for coverage adds.
@@ -2036,10 +2049,8 @@
     function updateEditCmeAndStatusVisibility() {
       const t = document.getElementById('edit-type').value;
       const cat = document.getElementById('edit-category').value;
-      const confField = document.getElementById('edit-conf-field');
-      confField.hidden = !LINK_TYPES.has(t);
-      const confLbl = confField.querySelector('label');
-      if (confLbl) confLbl.textContent = linkLabelFor(t) + (t === 'cme' ? '' : ' (optional)');
+      document.getElementById('edit-conf-field').hidden = !LINK_TYPES.has(t);
+      document.getElementById('edit-attach-field').hidden = !FILE_TYPES.has(t);
       document.getElementById('edit-status-field').hidden = cat !== 'time_away';
       document.getElementById('edit-site-field').hidden = cat !== 'coverage_adds';
     }
@@ -2876,6 +2887,53 @@
     // Note: sort_order is a global property, so a reorder inside one day
     // also affects how the same entry sorts on any other day it appears —
     // acceptable tradeoff to keep the schema simple.
+    // Uploads a file to Supabase Storage and returns the stored path so it
+    // can be persisted on the entry. Path pattern: <yyyymm>/<uuid>-<name>.
+    // Returns { path, error }.
+    async function uploadEntryAttachment(file, statusEl) {
+      try {
+        if (statusEl) { statusEl.style.color = 'var(--muted)'; statusEl.textContent = `Uploading ${file.name}…`; }
+        const safeName = (file.name || 'file').replace(/[^\w.\-]+/g, '_').slice(0, 80);
+        const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+        const rand = (crypto.randomUUID?.() || Math.random().toString(36).slice(2)).slice(0, 8);
+        const path = `${yyyymm}/${rand}-${safeName}`;
+        const { error } = await state.supabase.storage
+          .from(ATTACH_BUCKET)
+          .upload(path, file, { contentType: file.type || undefined, upsert: false });
+        if (error) throw error;
+        if (statusEl) { statusEl.style.color = 'var(--pos)'; statusEl.textContent = `Uploaded ${safeName}`; }
+        return { path };
+      } catch (err) {
+        console.error('attachment upload', err);
+        if (statusEl) { statusEl.style.color = 'var(--neg)'; statusEl.textContent = `Upload failed: ${err.message || err}`; }
+        return { error: err };
+      }
+    }
+
+    // Returns a short-lived signed URL for a stored attachment so it can
+    // be opened / downloaded without exposing a permanent public link.
+    async function attachmentSignedUrl(path, ttlSeconds = 3600) {
+      if (!path) return null;
+      try {
+        const { data, error } = await state.supabase.storage
+          .from(ATTACH_BUCKET)
+          .createSignedUrl(path, ttlSeconds);
+        if (error) throw error;
+        return data?.signedUrl || null;
+      } catch (err) {
+        console.error('signedUrl', err);
+        return null;
+      }
+    }
+
+    function attachmentFileName(path) {
+      if (!path) return '';
+      const base = path.split('/').pop() || '';
+      // Strip the '<8char>-' random prefix we add during upload so the
+      // filename reads cleanly.
+      return base.replace(/^[a-z0-9]{6,10}-/, '');
+    }
+
     async function reorderDayEntries(entries, fromIdx, toIdx, dayStr) {
       if (!isAdminMode() || fromIdx === toIdx) return;
       // Normalize sort_order across the day so unset entries get concrete
@@ -3323,6 +3381,21 @@
         confLabelCell.textContent = entry.event_type === 'int' ? 'CV / attachment'
                                   : entry.event_type === 'cme' ? 'Conference'
                                   : 'Attachment';
+      }
+      // Uploaded file attachment (Supabase Storage). Sign a fresh URL each
+      // open so we never expose a long-lived link.
+      const attachRow = document.getElementById('detail-attach-row');
+      const attachEl  = document.getElementById('detail-attach');
+      if (entry.attachment_path) {
+        attachRow.hidden = false;
+        const fname = attachmentFileName(entry.attachment_path);
+        attachEl.innerHTML = `<span style="color:var(--muted);">${escapeHtml(fname)} — loading…</span>`;
+        attachmentSignedUrl(entry.attachment_path).then(url => {
+          if (!url) { attachEl.innerHTML = '<span style="color:var(--neg);">Could not load attachment.</span>'; return; }
+          attachEl.innerHTML = `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" download="${escapeHtml(fname)}">${escapeHtml(fname)}</a>`;
+        });
+      } else {
+        attachRow.hidden = true;
       }
       if (entry.conference_link) {
         confRow.hidden = false;
@@ -3852,6 +3925,8 @@
       document.getElementById('add-title-input').value = '';
       document.getElementById('add-site').value = '';
       document.getElementById('add-conf').value = '';
+      const attachEl = document.getElementById('add-attach'); if (attachEl) attachEl.value = '';
+      const attachStatus = document.getElementById('add-attach-status'); if (attachStatus) attachStatus.textContent = '';
       const t = opts.defaultDate || ymd(new Date());
       document.getElementById('add-start').value = t;
       document.getElementById('add-end').value = t;
@@ -3891,6 +3966,16 @@
         btn.disabled = false;
         return;
       }
+      // If a file was picked, upload it FIRST so we can persist the path.
+      if (FILE_TYPES.has(eventType)) {
+        const fileInput = document.getElementById('add-attach');
+        const f = fileInput?.files?.[0];
+        if (f) {
+          const { path, error } = await uploadEntryAttachment(f, document.getElementById('add-attach-status'));
+          if (error) { btn.disabled = false; return; }
+          entry.attachment_path = path;
+        }
+      }
       try {
         const r = await fetch('/api/admin-update', {
           method:'POST',
@@ -3925,6 +4010,12 @@
       document.getElementById('edit-title-input').value = base;
       document.getElementById('edit-site').value = site;
       document.getElementById('edit-conf').value = entry.conference_link || '';
+      document.getElementById('edit-attach').value = '';
+      document.getElementById('edit-attach-status').textContent = '';
+      const curLbl = document.getElementById('edit-attach-current');
+      curLbl.textContent = entry.attachment_path
+        ? `Current: ${attachmentFileName(entry.attachment_path)} (uploading a new file replaces it)`
+        : 'No file attached yet.';
       document.getElementById('edit-start').value = entry.start_date;
       document.getElementById('edit-end').value = entry.end_date;
       document.getElementById('edit-status').value = entry.status;
@@ -3966,6 +4057,20 @@
         toast('End date must be on or after start date.', 'error');
         btn.disabled = false;
         return;
+      }
+      // If a new file was picked, upload it. Existing attachment is replaced
+      // (old file becomes orphaned in storage — cheap enough to leave).
+      if (FILE_TYPES.has(eventType)) {
+        const fileInput = document.getElementById('edit-attach');
+        const f = fileInput?.files?.[0];
+        if (f) {
+          const { path, error } = await uploadEntryAttachment(f, document.getElementById('edit-attach-status'));
+          if (error) { btn.disabled = false; return; }
+          patch.attachment_path = path;
+        }
+      } else {
+        // Type changed to something that shouldn't carry a file — clear it.
+        patch.attachment_path = null;
       }
       try {
         const r = await fetch('/api/admin-update', {
