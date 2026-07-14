@@ -112,6 +112,14 @@ async function handleUpdate(supa, body, res) {
     update.decided_at = patch.status === 'pending' ? null : new Date().toISOString();
     update.decided_by = patch.status === 'pending' ? null : 'admin';
   }
+  if ('sort_order' in patch) {
+    const n = patch.sort_order;
+    update.sort_order = (n == null || Number.isNaN(Number(n))) ? null : Math.floor(Number(n));
+  }
+  if ('decision_note' in patch) {
+    const n = patch.decision_note;
+    update.decision_note = (typeof n === 'string' && n.trim()) ? n.trim().slice(0, 500) : null;
+  }
 
   if (Object.keys(update).length === 0) return send(res, 400, { error: 'no_changes' });
 

@@ -2013,10 +2013,21 @@
       updateOnlineState();
     }
 
+    // Types where a URL attachment makes sense — conference agenda for CME,
+    // candidate CV for Interview.
+    const LINK_TYPES = new Set(['cme', 'int']);
+    function linkLabelFor(t) {
+      if (t === 'cme') return 'Conference link';
+      if (t === 'int') return 'CV / attachment link';
+      return 'Attachment link';
+    }
     function updateAddCmeAndStatusVisibility() {
       const t = document.getElementById('add-type').value;
       const cat = document.getElementById('add-category').value;
-      document.getElementById('add-conf-field').hidden = t !== 'cme';
+      const confField = document.getElementById('add-conf-field');
+      confField.hidden = !LINK_TYPES.has(t);
+      const confLbl = confField.querySelector('label');
+      if (confLbl) confLbl.textContent = linkLabelFor(t) + (t === 'cme' ? '' : ' (optional)');
       // Status only meaningful for time_away.
       document.getElementById('add-status-field').hidden = cat !== 'time_away';
       // Site only meaningful for coverage adds.
@@ -2025,7 +2036,10 @@
     function updateEditCmeAndStatusVisibility() {
       const t = document.getElementById('edit-type').value;
       const cat = document.getElementById('edit-category').value;
-      document.getElementById('edit-conf-field').hidden = t !== 'cme';
+      const confField = document.getElementById('edit-conf-field');
+      confField.hidden = !LINK_TYPES.has(t);
+      const confLbl = confField.querySelector('label');
+      if (confLbl) confLbl.textContent = linkLabelFor(t) + (t === 'cme' ? '' : ' (optional)');
       document.getElementById('edit-status-field').hidden = cat !== 'time_away';
       document.getElementById('edit-site-field').hidden = cat !== 'coverage_adds';
     }
@@ -2818,12 +2832,7 @@
           cell.appendChild(chips);
 
           const dayEntries = entriesOn(dayStr);
-          const sorted = [...dayEntries].sort((a, b) => {
-            const ca = TYPE_META[a.event_type]?.category || 'zzz';
-            const cb = TYPE_META[b.event_type]?.category || 'zzz';
-            if (ca !== cb) return ca.localeCompare(cb);
-            return (a.start_date || '').localeCompare(b.start_date || '');
-          });
+          const sorted = [...dayEntries].sort(sortEntries);
           const max = 5;
           const visible = sorted.slice(0, max);
           const hidden = sorted.length - visible.length;
@@ -2862,16 +2871,65 @@
       renderCalendar();
     }
 
+    // Reassign sort_order values on two neighboring entries to swap their
+    // positions in the day drawer. Persist both patches, then refresh.
+    // Note: sort_order is a global property, so a reorder inside one day
+    // also affects how the same entry sorts on any other day it appears —
+    // acceptable tradeoff to keep the schema simple.
+    async function reorderDayEntries(entries, fromIdx, toIdx, dayStr) {
+      if (!isAdminMode() || fromIdx === toIdx) return;
+      // Normalize sort_order across the day so unset entries get concrete
+      // values matching their current position. This keeps the swap
+      // deterministic when some entries have no explicit order yet.
+      const base = 1000;
+      const step = 10;
+      const normalized = entries.map((e, i) => ({ id: e.id, so: base + i * step }));
+      // Swap in normalized[]:
+      [normalized[fromIdx].so, normalized[toIdx].so] = [normalized[toIdx].so, normalized[fromIdx].so];
+      const affected = [normalized[fromIdx], normalized[toIdx]];
+      // Also normalize the OTHER entries so the swap sticks. Send patches
+      // only for entries whose current sort_order differs from what we
+      // want them to be.
+      const patches = [];
+      for (let i = 0; i < normalized.length; i++) {
+        const target = normalized[i];
+        const current = entries[i];
+        if (current.sort_order !== target.so) patches.push(target);
+      }
+      try {
+        await Promise.all(patches.map(p => fetch('/api/admin-update', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ token: state.adminToken, action: 'update', id: p.id, patch: { sort_order: p.so } }),
+        })));
+        await refresh();
+      } catch (err) {
+        console.error('reorder', err);
+        toast('Reorder failed. Try again.', 'error');
+      }
+    }
+
+    // Sort comparator used by the calendar cells + the day drawer.
+    // Admin-set sort_order (nullable int, lower = higher on list) wins;
+    // rows with no explicit order fall back to category then start_date.
+    function sortEntries(a, b) {
+      const aHas = a.sort_order != null;
+      const bHas = b.sort_order != null;
+      if (aHas && bHas) {
+        if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+      } else if (aHas) return -1;
+      else if (bHas) return 1;
+      const ca = TYPE_META[a.event_type]?.category || 'zzz';
+      const cb = TYPE_META[b.event_type]?.category || 'zzz';
+      if (ca !== cb) return ca.localeCompare(cb);
+      return (a.start_date || '').localeCompare(b.start_date || '');
+    }
+
     function renderDayDrawer(dayStr) {
       const date = new Date(`${dayStr}T00:00:00`);
       const dayLabel = date.toLocaleDateString('en-US',
         { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-      const entries = entriesOn(dayStr).sort((a, b) => {
-        const ca = TYPE_META[a.event_type]?.category || 'zzz';
-        const cb = TYPE_META[b.event_type]?.category || 'zzz';
-        if (ca !== cb) return ca.localeCompare(cb);
-        return (a.start_date || '').localeCompare(b.start_date || '');
-      });
+      const entries = entriesOn(dayStr).sort(sortEntries);
 
       const wrap = document.createElement('div');
       wrap.className = 'cell-drawer';
@@ -2905,7 +2963,9 @@
       if (entries.length) {
         const list = document.createElement('div');
         list.className = 'day-overview-list';
-        for (const e of entries) {
+        const admin = isAdminMode();
+        for (let i = 0; i < entries.length; i++) {
+          const e = entries[i];
           const row = document.createElement('div');
           row.className = 'day-overview-row';
           const meta = document.createElement('div');
@@ -2913,14 +2973,39 @@
           const chip = renderChip(e);
           chip.style.cursor = 'pointer';
           chip.style.pointerEvents = 'none';
+          meta.appendChild(chip);
+
+          const rightSide = document.createElement('div');
+          rightSide.style.cssText = 'display:flex;align-items:center;gap:6px;flex-shrink:0;';
+
+          if (admin) {
+            const btnUp = document.createElement('button');
+            btnUp.type = 'button';
+            btnUp.className = 'ghost';
+            btnUp.style.cssText = 'min-height:28px;padding:2px 8px;font-size:14px;line-height:1;';
+            btnUp.textContent = '↑';
+            btnUp.title = 'Move up';
+            btnUp.disabled = i === 0;
+            btnUp.onclick = (ev) => { ev.stopPropagation(); reorderDayEntries(entries, i, i - 1, dayStr); };
+            const btnDown = document.createElement('button');
+            btnDown.type = 'button';
+            btnDown.className = 'ghost';
+            btnDown.style.cssText = 'min-height:28px;padding:2px 8px;font-size:14px;line-height:1;';
+            btnDown.textContent = '↓';
+            btnDown.title = 'Move down';
+            btnDown.disabled = i === entries.length - 1;
+            btnDown.onclick = (ev) => { ev.stopPropagation(); reorderDayEntries(entries, i, i + 1, dayStr); };
+            rightSide.appendChild(btnUp);
+            rightSide.appendChild(btnDown);
+          }
           const arrow = document.createElement('span');
           arrow.className = 'row-arrow';
           arrow.textContent = 'View detail →';
-          meta.appendChild(chip);
-          meta.appendChild(arrow);
+          rightSide.appendChild(arrow);
+          meta.appendChild(rightSide);
           row.appendChild(meta);
 
-          const canSeeNotes = isAdminMode() || (e.member_id && e.member_id === state.me?.id);
+          const canSeeNotes = admin || (e.member_id && e.member_id === state.me?.id);
           if (canSeeNotes && e.notes) {
             const np = document.createElement('div');
             np.className = 'note-preview';
@@ -3230,9 +3315,15 @@
       document.getElementById('detail-type').textContent = meta.label || entry.event_type;
       document.getElementById('detail-range').textContent = range;
 
-      // Conference link row (CME).
+      // Attachment link row — CME agenda, Interview CV, etc.
       const confRow = document.getElementById('detail-conf-row');
       const confEl = document.getElementById('detail-conf');
+      const confLabelCell = confRow?.querySelector('.label');
+      if (confLabelCell) {
+        confLabelCell.textContent = entry.event_type === 'int' ? 'CV / attachment'
+                                  : entry.event_type === 'cme' ? 'Conference'
+                                  : 'Attachment';
+      }
       if (entry.conference_link) {
         confRow.hidden = false;
         confEl.innerHTML = `<a href="${escapeHtml(entry.conference_link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.conference_link)}</a>`;
@@ -3788,7 +3879,7 @@
         end_date:   document.getElementById('add-end').value,
         status:     document.getElementById('add-status').value,
         notes:      document.getElementById('add-notes').value.trim() || null,
-        conference_link: eventType === 'cme' && conf ? conf : null,
+        conference_link: (LINK_TYPES.has(eventType) && conf) ? conf : null,
       };
       if (!member_id && !entry.title) {
         toast('Pick a member or enter a title.', 'error');
@@ -3862,7 +3953,7 @@
         start_date: document.getElementById('edit-start').value,
         end_date:   document.getElementById('edit-end').value,
         notes:      document.getElementById('edit-notes').value.trim() || null,
-        conference_link: eventType === 'cme' ? (conf || null) : null,
+        conference_link: LINK_TYPES.has(eventType) ? (conf || null) : null,
       };
       // Only include status when category is time_away (others have no status concept).
       if (cat === 'time_away') patch.status = document.getElementById('edit-status').value;
