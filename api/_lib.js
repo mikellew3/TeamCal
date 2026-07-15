@@ -281,3 +281,92 @@ export function classifyConflict(dayCounts) {
 
   return { state: 'clear', reason: null, blockedDays: [] };
 }
+
+// ============================================================
+// Summer PTO cap: 10 business days per member between Memorial
+// Day and Labor Day inclusive. Enforced starting summer 2027.
+// ============================================================
+export const SUMMER_PTO_LIMIT_DAYS = 10;
+export const SUMMER_RULE_YEAR_START = 2027;
+
+// Memorial Day: last Monday of May.
+function memorialDay(year) {
+  const d = new Date(Date.UTC(year, 4, 31));
+  const dow = d.getUTCDay();                        // Sun=0..Sat=6
+  const back = (dow === 1) ? 0 : ((dow + 6) % 7);   // days back to Monday
+  d.setUTCDate(31 - back);
+  return d.toISOString().slice(0, 10);
+}
+// Labor Day: first Monday of September.
+function laborDay(year) {
+  const d = new Date(Date.UTC(year, 8, 1));
+  const dow = d.getUTCDay();
+  const fwd = (1 - dow + 7) % 7;
+  d.setUTCDate(1 + fwd);
+  return d.toISOString().slice(0, 10);
+}
+export function summerWindow(year) {
+  return { start: memorialDay(year), end: laborDay(year) };
+}
+
+// Inclusive Mon–Fri count between two YYYY-MM-DD dates.
+export function businessDaysBetween(startYmd, endYmd) {
+  if (!startYmd || !endYmd || endYmd < startYmd) return 0;
+  let count = 0;
+  const d = new Date(`${startYmd}T00:00:00Z`);
+  const end = new Date(`${endYmd}T00:00:00Z`);
+  while (d <= end) {
+    const dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) count++;
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return count;
+}
+
+// Total member PTO business days that fall within the summer window
+// of `year`. statusFilter: 'active' counts approved+pending, 'approved'
+// counts approved only. Returns 0 for years before the rule kicks in.
+export async function summerPtoUsed(supa, memberId, year, statusFilter = 'active') {
+  if (year < SUMMER_RULE_YEAR_START) return 0;
+  const { start: winStart, end: winEnd } = summerWindow(year);
+  const statuses = statusFilter === 'approved' ? ['approved'] : ['approved', 'pending'];
+  const { data, error } = await supa
+    .from('calendar_entries')
+    .select('start_date, end_date')
+    .eq('member_id', memberId)
+    .eq('event_type', 'pto')
+    .in('status', statuses)
+    .lte('start_date', winEnd)
+    .gte('end_date', winStart);
+  if (error) throw error;
+  let total = 0;
+  for (const e of (data || [])) {
+    const s  = e.start_date > winStart ? e.start_date : winStart;
+    const en = e.end_date   < winEnd   ? e.end_date   : winEnd;
+    if (en < s) continue;
+    total += businessDaysBetween(s, en);
+  }
+  return total;
+}
+
+// For a new request, return { year, cap, currentUsed, newDays, wouldTotal }
+// if it exceeds the summer cap, else null. Only checks 2027+ summers.
+export async function summerCapCheck(supa, memberId, startDate, endDate) {
+  const startYear = new Date(`${startDate}T00:00:00Z`).getUTCFullYear();
+  const endYear   = new Date(`${endDate}T00:00:00Z`).getUTCFullYear();
+  for (let year = startYear; year <= endYear; year++) {
+    if (year < SUMMER_RULE_YEAR_START) continue;
+    const { start: winStart, end: winEnd } = summerWindow(year);
+    const s  = startDate > winStart ? startDate : winStart;
+    const en = endDate   < winEnd   ? endDate   : winEnd;
+    if (en < s) continue;
+    const newDays = businessDaysBetween(s, en);
+    if (newDays === 0) continue;
+    const currentUsed = await summerPtoUsed(supa, memberId, year, 'active');
+    const wouldTotal = currentUsed + newDays;
+    if (wouldTotal > SUMMER_PTO_LIMIT_DAYS) {
+      return { year, cap: SUMMER_PTO_LIMIT_DAYS, currentUsed, newDays, wouldTotal, winStart, winEnd };
+    }
+  }
+  return null;
+}

@@ -4,6 +4,7 @@ import {
   TIME_AWAY_TYPES, TYPE_LABEL,
   isYmd, isHttpUrl,
   timeAwayConflicts, classifyConflict, effectiveTimeAwayRange,
+  summerCapCheck, SUMMER_PTO_LIMIT_DAYS,
   dayCount, formatRange,
 } from './_lib.js';
 import { sendPush } from './_push.js';
@@ -101,6 +102,31 @@ export default async function handler(req, res) {
       chained: effective.chained,
       effective_range: effective.chained ? { start: effective.start, end: effective.end } : undefined,
     });
+  }
+
+  // Summer PTO cap (starting summer 2027): 10 business days per member
+  // between Memorial Day and Labor Day, inclusive. Hard stop.
+  if (event_type === 'pto') {
+    try {
+      const cap = await summerCapCheck(supa, member.id, start_date, end_date);
+      if (cap) {
+        return send(res, 409, {
+          error: 'summer_cap',
+          detail: `Summer PTO cap: ${cap.cap} business days between Memorial Day (${cap.winStart}) and Labor Day (${cap.winEnd}). You already have ${cap.currentUsed} approved/pending; this request would add ${cap.newDays}, putting you at ${cap.wouldTotal}.`,
+          year: cap.year,
+          current_used: cap.currentUsed,
+          new_days: cap.newDays,
+          would_total: cap.wouldTotal,
+          cap: cap.cap,
+          window_start: cap.winStart,
+          window_end: cap.winEnd,
+        });
+      }
+    } catch (e) {
+      console.error('summer-cap-check', e);
+      // Don't hard-fail the request on a cap-check error — better UX to
+      // let it through and log for admin review than to blackhole PTO.
+    }
   }
   // Watch state: require a note explaining the overlap.
   if (verdict.state === 'watch' && verdict.requiresNote) {

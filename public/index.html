@@ -3300,6 +3300,14 @@
           body: JSON.stringify(body),
         });
         const j = await r.json();
+        if (r.status === 409 && j.error === 'summer_cap') {
+          const previewEl = document.getElementById('req-preview');
+          previewEl.hidden = false;
+          previewEl.className = 'conflict-preview block';
+          previewEl.innerHTML = `<div class="icon">✕</div><div><strong>Summer PTO cap reached.</strong><div style="font-size:12px;margin-top:4px;color:#7a4e2d;">${escapeHtml(j.detail || '')}<br/>Message Admin if you need to coordinate an exception.</div></div>`;
+          btn.disabled = true;
+          return;
+        }
         if (r.status === 409) {
           const previewEl = document.getElementById('req-preview');
           previewEl.hidden = false;
