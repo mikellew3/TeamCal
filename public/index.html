@@ -920,6 +920,7 @@
       <div class="mast-r">
         <button class="primary disable-when-offline" id="btn-request">Request Time Away</button>
         <button class="ghost disable-when-offline" id="btn-add-entry" hidden>Add Entry</button>
+        <button class="ghost" id="btn-time-off">Time Off</button>
         <button class="ghost" id="btn-security">Security</button>
         <button class="ghost" id="btn-notifications">Notifications</button>
         <button class="ghost" id="btn-admin">Admin</button>
@@ -1914,6 +1915,7 @@
       document.getElementById('btn-week-builder').onclick     = openWeekBuilder;
       document.getElementById('btn-discussions').onclick      = openDiscussionsModal;
       document.getElementById('btn-pto-report').onclick       = openPtoReport;
+      document.getElementById('btn-time-off').onclick         = openPtoReport;
       document.getElementById('btn-pto-close').onclick        = () => closeModal('pto-report-backdrop');
       document.getElementById('btn-pto-close-x').onclick      = () => closeModal('pto-report-backdrop');
       document.getElementById('btn-pto-back').onclick         = () => { state.ptoReportMember = null; renderPtoReport(); };
@@ -2412,7 +2414,9 @@
     }
 
     function openPtoReport() {
-      if (!isAdminMode()) return;
+      // Available to admin AND members — visibility of PTO utilization
+      // is intentional peer accountability. FMLA is hidden from non-admin
+      // views (federally protected).
       if (!state.ptoReportYear) state.ptoReportYear = new Date().getFullYear();
       state.ptoReportMember = null;
       renderPtoReport();
@@ -2465,7 +2469,8 @@
       const maxWeighted = Math.max(1, ...rows.map(r => r.weightedPto));
       rows.sort((a, b) => b.weightedPto - a.weightedPto);
 
-      // Team totals row
+      // Team totals row. FMLA hidden entirely from non-admin (protected leave).
+      const admin = isAdminMode();
       const team = {
         ptoTaken:  rows.reduce((s, r) => s + r.stats.pto.takenDays, 0),
         ptoSched:  rows.reduce((s, r) => s + r.stats.pto.scheduledDays, 0),
@@ -2480,7 +2485,7 @@
         <span>Team PTO: <strong>${team.ptoTaken}</strong> taken · <strong>${team.ptoSched}</strong> scheduled</span>
         <span>CME: <strong>${team.cme}</strong></span>
         <span>Sick: <strong>${team.sick}</strong></span>
-        ${team.fmla ? `<span>FMLA: <strong>${team.fmla}</strong></span>` : ''}
+        ${admin && team.fmla ? `<span>FMLA: <strong>${team.fmla}</strong></span>` : ''}
         <span>Per Diem shifts: <strong>${team.pd}</strong></span>
       `;
       container.appendChild(totals);
@@ -2493,11 +2498,12 @@
         const weightedHint = r.fte < 1
           ? ` <span style="color:var(--muted);font-size:10px;">(≈ ${(Math.round(r.weightedPto * 10) / 10)} weighted)</span>`
           : '';
+        const fmlaChunk = admin && r.stats.fmla.total ? ` · FMLA ${r.stats.fmla.total}` : '';
         const row = document.createElement('div');
         row.className = 'pto-row';
         row.innerHTML = `
           <div class="name"><span class="dot" style="background:${escapeHtml(r.member.color || 'transparent')}"></span>${escapeHtml(r.member.name)}${fteBadge}</div>
-          <div class="breakdown">PTO: <strong>${r.stats.pto.takenDays}</strong> + <strong>${r.stats.pto.scheduledDays}</strong> = <strong>${r.stats.pto.total}</strong>${weightedHint}${r.stats.cme.total ? ` · CME ${r.stats.cme.total}` : ''}${r.stats.sick.total ? ` · Sick ${r.stats.sick.total}` : ''}${r.stats.fmla.total ? ` · FMLA ${r.stats.fmla.total}` : ''}${r.stats.per_diem.count ? ` · PD ${r.stats.per_diem.count}` : ''}</div>
+          <div class="breakdown">PTO: <strong>${r.stats.pto.takenDays}</strong> + <strong>${r.stats.pto.scheduledDays}</strong> = <strong>${r.stats.pto.total}</strong>${weightedHint}${r.stats.cme.total ? ` · CME ${r.stats.cme.total}` : ''}${r.stats.sick.total ? ` · Sick ${r.stats.sick.total}` : ''}${fmlaChunk}${r.stats.per_diem.count ? ` · PD ${r.stats.per_diem.count}` : ''}</div>
           <div class="pto-bar"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
           <div class="arrow">›</div>
         `;
@@ -2531,7 +2537,8 @@
       const maxWeighted = Math.max(1, ...allWeighted);
       const pct = Math.round((myWeighted / maxWeighted) * 100);
 
-      // Stat cards
+      // Stat cards. FMLA hidden for non-admin (federally protected leave).
+      const admin = isAdminMode();
       const cards = document.createElement('div');
       cards.className = 'pto-detail-stats';
       cards.innerHTML = `
@@ -2540,17 +2547,18 @@
         <div class="pto-stat"><div class="lbl">PTO Total</div><div class="val">${stats.pto.total}</div><div class="sub">${myFte < 1 ? `≈ ${Math.round(myWeighted * 10) / 10} weighted · ` : ''}${pct}% of team max</div></div>
         <div class="pto-stat"><div class="lbl">CME</div><div class="val">${stats.cme.total}</div><div class="sub">${stats.cme.takenDays} taken · ${stats.cme.scheduledDays} scheduled</div></div>
         <div class="pto-stat"><div class="lbl">Sick</div><div class="val">${stats.sick.total}</div><div class="sub">${stats.sick.takenDays} taken · ${stats.sick.scheduledDays} scheduled</div></div>
-        <div class="pto-stat"><div class="lbl">FMLA</div><div class="val">${stats.fmla.total}</div><div class="sub">${stats.fmla.takenDays} taken · ${stats.fmla.scheduledDays} scheduled</div></div>
+        ${admin ? `<div class="pto-stat"><div class="lbl">FMLA</div><div class="val">${stats.fmla.total}</div><div class="sub">${stats.fmla.takenDays} taken · ${stats.fmla.scheduledDays} scheduled</div></div>` : ''}
         <div class="pto-stat"><div class="lbl">Per Diem Shifts</div><div class="val">${stats.per_diem.count}</div><div class="sub">${stats.per_diem.days} day${stats.per_diem.days === 1 ? '' : 's'} covered</div></div>
       `;
       container.appendChild(cards);
 
-      // Upcoming this year by month — PTO + CME + Sick scheduled (Sick rare but possible if pre-entered)
+      // Upcoming this year by month — PTO + CME + Sick scheduled. FMLA is
+      // admin-only.
       const upcoming = [
         ...stats.pto.scheduled.map(r => ({ ...r, type: 'PTO' })),
         ...stats.cme.scheduled.map(r => ({ ...r, type: 'CME' })),
         ...stats.sick.scheduled.map(r => ({ ...r, type: 'Sick' })),
-        ...stats.fmla.scheduled.map(r => ({ ...r, type: 'FMLA' })),
+        ...(admin ? stats.fmla.scheduled.map(r => ({ ...r, type: 'FMLA' })) : []),
       ].sort((a, b) => a.start.localeCompare(b.start));
 
       const upSec = document.createElement('div');
@@ -2611,7 +2619,9 @@
       container.appendChild(buildSection(`PTO taken (${year})`, stats.pto.taken, 'No PTO taken yet this year.'));
       container.appendChild(buildSection(`CME taken (${year})`, stats.cme.taken, 'No CME taken yet this year.'));
       container.appendChild(buildSection(`Sick (${year})`, [...stats.sick.taken, ...stats.sick.scheduled], 'No sick days this year.'));
-      container.appendChild(buildSection(`FMLA (${year})`, [...stats.fmla.taken, ...stats.fmla.scheduled], 'No FMLA days this year.'));
+      if (admin) {
+        container.appendChild(buildSection(`FMLA (${year})`, [...stats.fmla.taken, ...stats.fmla.scheduled], 'No FMLA days this year.'));
+      }
       container.appendChild(buildSection(`Per Diem shifts (${year})`, stats.per_diem.shifts, 'No per-diem shifts this year.'));
     }
 
