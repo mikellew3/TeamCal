@@ -234,12 +234,17 @@ export async function timeAwayConflicts(supabase, requesterId, startDate, endDat
   if (error) throw error;
 
   const byDay = new Map(days.map(d => [d, new Map()]));
+  const byDayFmla = new Map(days.map(d => [d, new Map()]));
   for (const e of data || []) {
     if (!e.member_id || e.member_id === requesterId) continue;
     for (const day of days) {
       if (day >= e.start_date && day <= e.end_date) {
         const m = byDay.get(day);
         if (!m.has(e.member_id)) m.set(e.member_id, e.team_members?.name || 'Unknown');
+        if (e.event_type === 'fmla') {
+          const fm = byDayFmla.get(day);
+          if (!fm.has(e.member_id)) fm.set(e.member_id, e.team_members?.name || 'Unknown');
+        }
       }
     }
   }
@@ -247,12 +252,20 @@ export async function timeAwayConflicts(supabase, requesterId, startDate, endDat
     dayCounts: days.map(day => ({
       day,
       others_off: byDay.get(day).size,
+      others_fmla: byDayFmla.get(day).size,
       names: Array.from(byDay.get(day).values()).sort(),
+      fmla_names: Array.from(byDayFmla.get(day).values()).sort(),
     })),
   };
 }
 
 export function classifyConflict(dayCounts) {
+  // Hard block #0: any day where another member is on active FMLA. Coverage
+  // is already stretched thin during FMLA leave, so no additional PTO / time-
+  // away can overlap. Highest priority — evaluated before the standard rules.
+  const fmlaDays = dayCounts.filter(d => (d.others_fmla || 0) > 0);
+  if (fmlaDays.length > 0) return { state: 'block', reason: 'fmla_overlap', blockedDays: fmlaDays };
+
   // Hard block #1: any single day where ≥2 other members are already off.
   const twoOff = dayCounts.filter(d => d.others_off >= 2);
   if (twoOff.length > 0) return { state: 'block', reason: 'two_off', blockedDays: twoOff };
