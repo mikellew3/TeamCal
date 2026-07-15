@@ -614,6 +614,26 @@
       display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;
     }
     .pto-team-totals strong { color:var(--ink); }
+    .pto-legend {
+      margin-bottom:14px;border:1px solid var(--line);border-radius:4px;
+      background:var(--paper);
+    }
+    .pto-legend > summary {
+      cursor:pointer;padding:8px 14px;font-size:11px;font-weight:600;
+      color:var(--accent);letter-spacing:0.05em;text-transform:uppercase;
+      list-style:none;user-select:none;
+    }
+    .pto-legend > summary::-webkit-details-marker { display:none; }
+    .pto-legend > summary::before { content:'▸ ';color:var(--ink-2);margin-right:4px; }
+    .pto-legend[open] > summary::before { content:'▾ '; }
+    .pto-legend > summary:hover { background:var(--paper-warm); }
+    .pto-legend-body {
+      padding:10px 14px 12px;border-top:1px solid var(--line);
+      display:flex;flex-direction:column;gap:8px;
+      font-size:12px;line-height:1.45;color:var(--ink-2);
+    }
+    .pto-legend-body strong { color:var(--ink); }
+    .pto-legend-body em { font-style:italic;color:var(--ink); }
     .pto-row {
       display:grid;grid-template-columns:1.4fr 1fr 1.6fr auto;
       gap:14px;align-items:center;padding:12px 14px;
@@ -2489,6 +2509,21 @@
         <span>Per Diem shifts: <strong>${team.pd}</strong></span>
       `;
       container.appendChild(totals);
+
+      // Collapsible explainer so the % isn't misread as an allotment %.
+      const legend = document.createElement('details');
+      legend.className = 'pto-legend';
+      legend.innerHTML = `
+        <summary>How the % is calculated</summary>
+        <div class="pto-legend-body">
+          <div><strong>Utilization %</strong> compares your PTO to the team's <em>heaviest user</em> — the top person reads as 100% and everyone else scales down. It is <strong>not</strong> a % of your accrued PTO balance.</div>
+          <div><strong>FTE-weighted:</strong> a half-timer's day of PTO counts twice against the bar, so a 0.5 FTE with 5 days ranks the same as a 1.0 FTE with 10. Full-timers count 1:1.</div>
+          <div><strong>Per diems excluded</strong> from the ranking — they don't accrue paid time off, so a comparison isn't meaningful.</div>
+          <div><strong>Sick and Per Diem shifts</strong> are shown alongside PTO but do not affect the utilization bar${admin ? '' : '. FMLA is hidden from team view for privacy'}.</div>
+          <div><strong>Starting summer 2027:</strong> hard 10-business-day PTO cap between Memorial Day and Labor Day. Coverage-conflict rules still apply year-round.</div>
+        </div>
+      `;
+      container.appendChild(legend);
 
       for (const r of rows) {
         const pct = Math.round((r.weightedPto / maxWeighted) * 100);
