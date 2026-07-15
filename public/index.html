@@ -3357,11 +3357,8 @@
           const previewEl = document.getElementById('req-preview');
           previewEl.hidden = false;
           previewEl.className = 'conflict-preview block';
-          const namesSet = new Set();
-          (j.blocked_days || []).forEach(b => (b.fmla_names || b.names || []).forEach(n => namesSet.add(n)));
-          const nameList = Array.from(namesSet).join(', ');
           const items = (j.blocked_days || []).map(b => `<li>${formatDayShort(b.day)}</li>`).join('');
-          previewEl.innerHTML = `<div class="icon">✕</div><div><strong>Blocked — a teammate is on active FMLA.</strong><div style="font-size:12px;margin-top:4px;color:#7a4e2d;">${escapeHtml(nameList)} on FMLA${items ? ` — no additional time off can overlap:` : '.'}${items ? `<ul>${items}</ul>` : ''}Message Admin if there's a hard conflict to work around.</div></div>`;
+          previewEl.innerHTML = `<div class="icon">✕</div><div><strong>Too many teammates out — please pick another day.</strong>${items ? `<ul>${items}</ul>` : ''}<div style="font-size:12px;margin-top:4px;color:#7a4e2d;">Message Admin if this is urgent.</div></div>`;
           btn.disabled = true;
           return;
         }

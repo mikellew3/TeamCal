@@ -95,10 +95,16 @@ export default async function handler(req, res) {
   }
   const verdict = classifyConflict(conflicts.dayCounts);
   if (verdict.state === 'block') {
+    // Never expose FMLA-holder identities to the requester (privacy) —
+    // strip both the fmla_names field and the general names list for
+    // FMLA-triggered blocks, leaving just the day list.
+    const blockedDays = verdict.reason === 'fmla_overlap'
+      ? verdict.blockedDays.map(({ day }) => ({ day }))
+      : verdict.blockedDays;
     return send(res, 409, {
       error: 'conflict',
       reason: verdict.reason,
-      blocked_days: verdict.blockedDays,
+      blocked_days: blockedDays,
       chained: effective.chained,
       effective_range: effective.chained ? { start: effective.start, end: effective.end } : undefined,
     });
