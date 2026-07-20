@@ -1201,6 +1201,7 @@
           <button class="ghost" id="btn-remove-day" hidden>Remove This Day</button>
         </div>
         <button class="ghost" id="btn-detail-close">Close</button>
+        <button class="danger" id="btn-detail-withdraw" hidden>Withdraw</button>
         <button class="ghost" id="btn-detail-edit" hidden>Edit</button>
         <button class="ghost" id="btn-detail-reset" hidden>Reset to Pending</button>
         <button class="danger" id="btn-detail-deny" hidden>Deny</button>
@@ -2037,6 +2038,7 @@
       document.getElementById('btn-detail-approve').onclick = () => decideEntry('approved');
       document.getElementById('btn-detail-deny').onclick    = () => decideEntry('denied');
       document.getElementById('btn-detail-reset').onclick   = () => decideEntry('pending');
+      document.getElementById('btn-detail-withdraw').onclick = withdrawOwnRequest;
       document.getElementById('btn-detail-edit').onclick    = openEditFromDetail;
       document.getElementById('btn-delete').onclick         = deleteEntry;
       document.getElementById('btn-remove-day').onclick     = removeSingleDay;
@@ -3490,6 +3492,20 @@
       document.getElementById('btn-detail-deny').hidden    = !(showStatusActions && entry.status !== 'denied');
       document.getElementById('btn-detail-reset').hidden   = !(showStatusActions && entry.status !== 'pending');
 
+      // Self-withdraw: owner (non-admin) can cancel their own PTO / CME /
+      // General entries when start_date is more than 14 days out. Closer
+      // than that, they have to message admin.
+      const memberWithdrawTypes = new Set(['pto', 'cme', 'taw']);
+      const isOwner = entry.member_id && state.me && entry.member_id === state.me.id;
+      const nowMs = Date.now();
+      const startMs = new Date(`${entry.start_date}T00:00:00`).getTime();
+      const daysOut = Math.floor((startMs - nowMs) / 86400000);
+      const canWithdraw = isOwner && !isAdmin
+        && memberWithdrawTypes.has(entry.event_type)
+        && entry.status !== 'denied'
+        && daysOut > 14;
+      document.getElementById('btn-detail-withdraw').hidden = !canWithdraw;
+
       // Optional admin note when deciding — only show the input while the
       // request is still pending and admin is looking.
       const decideNoteField = document.getElementById('detail-decide-note-field');
@@ -3861,6 +3877,43 @@
       refreshAdminUi();
       renderAll();
       toast('Admin session ended.', 'success');
+    }
+
+    async function withdrawOwnRequest() {
+      const entry = state.detailEntry;
+      if (!entry) return;
+      openConfirm({
+        eyebrow: 'Withdraw',
+        title: 'Withdraw this request?',
+        sub: 'Cancels the entry — Admin will get a notification. If plans change again you can submit fresh.',
+        bodyHtml: '',
+        confirmText: 'Withdraw',
+        danger: true,
+        onConfirm: async () => {
+          try {
+            const jwt = state.session?.access_token;
+            const r = await fetch('/api/submit-request', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
+              body: JSON.stringify({ action: 'withdraw', id: entry.id }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) {
+              const msg = j.error === 'too_soon'
+                ? (j.detail || 'Too close to the start date to withdraw yourself. Message Admin.')
+                : (j.detail || j.error || 'Withdraw failed.');
+              toast(msg, 'error');
+              return;
+            }
+            closeModal('detail-backdrop');
+            toast('Request withdrawn.', 'success');
+            await refresh();
+          } catch (err) {
+            console.error('withdraw', err);
+            toast('Withdraw failed. Try again.', 'error');
+          }
+        },
+      });
     }
 
     async function decideEntry(status) {

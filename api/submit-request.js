@@ -64,6 +64,14 @@ export default async function handler(req, res) {
   if (!member.active) return send(res, 403, { error: 'inactive_member' });
 
   const body = await readJson(req);
+
+  // Member self-withdraw path: cancel your own PTO/CME/General entries so
+  // long as they start more than 2 weeks out. Anything closer must route
+  // through admin (coverage may already be planned around it).
+  if (body?.action === 'withdraw') {
+    return handleWithdraw(supa, member, body, res);
+  }
+
   const { event_type, start_date, end_date, notes, conference_link } = body || {};
 
   if (!TIME_AWAY_TYPES.includes(event_type)) {
@@ -238,4 +246,65 @@ async function sendAdminEmail({ memberName, typeLabel, days, range, notes }) {
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+// Types a member is allowed to withdraw themselves. Sick / FMLA / swaps
+// are admin-managed and stay off this list.
+const MEMBER_WITHDRAW_TYPES = ['pto', 'cme', 'taw'];
+const WITHDRAW_LEAD_DAYS = 14;
+
+async function handleWithdraw(supa, member, body, res) {
+  const { id } = body || {};
+  if (!id) return send(res, 400, { error: 'missing_id' });
+
+  const { data: entry, error } = await supa
+    .from('calendar_entries')
+    .select('id, member_id, event_type, start_date, end_date, status')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) { console.error('withdraw fetch', error); return send(res, 500, { error: 'server_error' }); }
+  if (!entry) return send(res, 404, { error: 'not_found' });
+
+  if (entry.member_id !== member.id) {
+    return send(res, 403, { error: 'not_your_entry' });
+  }
+  if (!MEMBER_WITHDRAW_TYPES.includes(entry.event_type)) {
+    return send(res, 400, {
+      error: 'not_withdrawable',
+      detail: 'This entry type can only be adjusted by admin.',
+    });
+  }
+
+  // Time gate: start_date must be strictly more than WITHDRAW_LEAD_DAYS
+  // out. Anything within the lead window has to go through admin.
+  const now = new Date();
+  const cutoff = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  cutoff.setUTCDate(cutoff.getUTCDate() + WITHDRAW_LEAD_DAYS);
+  const cutoffYmd = cutoff.toISOString().slice(0, 10);
+  if (entry.start_date <= cutoffYmd) {
+    return send(res, 400, {
+      error: 'too_soon',
+      detail: `Requests can only be withdrawn on your own if they start more than ${WITHDRAW_LEAD_DAYS} days out. Message Admin for closer changes.`,
+      cutoff: cutoffYmd,
+      start_date: entry.start_date,
+    });
+  }
+
+  const { error: delError } = await supa.from('calendar_entries').delete().eq('id', id);
+  if (delError) { console.error('withdraw delete', delError); return send(res, 500, { error: 'server_error' }); }
+
+  // Fire-and-forget admin notification so you know when someone cancels a
+  // pre-planned request without having to check the calendar.
+  const typeLabel = TYPE_LABEL[entry.event_type] || entry.event_type;
+  const range = formatRange(entry.start_date, entry.end_date);
+  sendPush({
+    recipientType: 'admin',
+    payload: {
+      title: `${member.name} withdrew ${typeLabel}`,
+      body: `${range} — no longer needed`,
+      tag: `withdraw-${id}`,
+    },
+  }).catch(err => console.error('push withdraw', err));
+
+  return send(res, 200, { ok: true, withdrawn: true });
 }
