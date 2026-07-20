@@ -3353,15 +3353,6 @@
           btn.disabled = true;
           return;
         }
-        if (r.status === 409 && j.reason === 'fmla_overlap') {
-          const previewEl = document.getElementById('req-preview');
-          previewEl.hidden = false;
-          previewEl.className = 'conflict-preview block';
-          const items = (j.blocked_days || []).map(b => `<li>${formatDayShort(b.day)}</li>`).join('');
-          previewEl.innerHTML = `<div class="icon">✕</div><div><strong>Too many teammates out — please pick another day.</strong>${items ? `<ul>${items}</ul>` : ''}<div style="font-size:12px;margin-top:4px;color:#7a4e2d;">Message Admin if this is urgent.</div></div>`;
-          btn.disabled = true;
-          return;
-        }
         if (r.status === 409) {
           const previewEl = document.getElementById('req-preview');
           previewEl.hidden = false;
@@ -3893,14 +3884,11 @@
           const chainNote = j.chained && j.effective_range
             ? `<div style="font-size:12px;margin-top:6px;color:#7a4e2d;">Chained with this member's other time-away — effective range ${escapeHtml(formatDayShort(j.effective_range.start))} – ${escapeHtml(formatDayShort(j.effective_range.end))}.</div>`
             : '';
-          const fmlaHeadline = j.reason === 'fmla_overlap'
-            ? '<div style="font-size:12px;margin-top:6px;color:#b54545;font-weight:600;">Note: this overlaps active FMLA leave. Coverage is already stretched.</div>'
-            : '';
           openConfirm({
             eyebrow: 'Conflict',
             title: 'Approving creates a conflict',
             sub: 'This approval overlaps with already-approved time away. You can override and approve anyway.',
-            bodyHtml: `<div class="conflict-preview block" style="margin-bottom:0;"><div class="icon">!</div><div><strong>Conflicts:</strong><ul>${items}</ul>${fmlaHeadline}${chainNote}</div></div>`,
+            bodyHtml: `<div class="conflict-preview block" style="margin-bottom:0;"><div class="icon">!</div><div><strong>Conflicts:</strong><ul>${items}</ul>${chainNote}</div></div>`,
             confirmText: 'Override & Approve',
             danger: false,
             onConfirm: async () => { await callDecide(id, status, true, decisionNote); },

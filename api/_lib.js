@@ -260,13 +260,12 @@ export async function timeAwayConflicts(supabase, requesterId, startDate, endDat
 }
 
 export function classifyConflict(dayCounts) {
-  // Hard block #0: any day where another member is on active FMLA. Coverage
-  // is already stretched thin during FMLA leave, so no additional PTO / time-
-  // away can overlap. Highest priority — evaluated before the standard rules.
-  const fmlaDays = dayCounts.filter(d => (d.others_fmla || 0) > 0);
-  if (fmlaDays.length > 0) return { state: 'block', reason: 'fmla_overlap', blockedDays: fmlaDays };
-
   // Hard block #1: any single day where ≥2 other members are already off.
+  // This already covers the 'doubling on FMLA' case: an FMLA holder counts
+  // as one 'other off', so an existing PTO on top of an FMLA day means a
+  // new request would see 2+ others off and get blocked. A single PTO
+  // overlapping an FMLA day (only the FMLA person off) stays in the
+  // 'watch with note' state below.
   const twoOff = dayCounts.filter(d => d.others_off >= 2);
   if (twoOff.length > 0) return { state: 'block', reason: 'two_off', blockedDays: twoOff };
 
