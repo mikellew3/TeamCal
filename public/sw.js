@@ -5,7 +5,7 @@
 //   - Static assets (icons, manifest, fonts): cache-first.
 // Bump CACHE_VERSION on any breaking change to force a refresh on all clients.
 
-const CACHE_VERSION = 'pa-cal-v65';
+const CACHE_VERSION = 'pa-cal-v66';
 const SHELL = [
   '/index.html',
   '/login.html',

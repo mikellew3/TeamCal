@@ -3202,15 +3202,19 @@
         openSecurityModal();
         return;
       }
-      const t = ymd(new Date());
       document.getElementById('req-type').value = 'pto';
-      document.getElementById('req-start').value = t;
-      document.getElementById('req-end').value = t;
+      // Deliberately blank — auto-defaulting to today led to accidental
+      // "today PTO" submissions. User must pick a real start; the
+      // change handler on req-start still auto-fills end to match.
+      document.getElementById('req-start').value = '';
+      document.getElementById('req-end').value = '';
       document.getElementById('req-notes').value = '';
       document.getElementById('req-conf').value = '';
       document.getElementById('req-conf-field').hidden = true;
       document.getElementById('req-preview').hidden = true;
-      document.getElementById('btn-req-submit').disabled = false;
+      // Submit stays disabled until valid dates land — updateRequestPreview
+      // takes care of that whenever either date changes.
+      document.getElementById('btn-req-submit').disabled = true;
       openModal('request-backdrop');
       updateRequestPreview();
     }
