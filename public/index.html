@@ -2790,20 +2790,26 @@
       }
 
       // Off Today: distinct members + ordered names. Swaps excluded.
+      // Weekends are non-work days for MGSA — no one is 'off' in the
+      // coverage sense on Sat/Sun, so skip the tally entirely.
       const offTodayIds = new Set();
       const offTodayNames = [];
-      for (const e of state.entries) {
-        if (countsAsDayOff(e.event_type)
-            && e.status === 'approved'
-            && e.member_id
-            && today >= e.start_date && today <= e.end_date
-            && !offTodayIds.has(e.member_id)) {
-          offTodayIds.add(e.member_id);
-          const m = state.members.find(x => x.id === e.member_id);
-          if (m) offTodayNames.push(m.name);
+      const todayDow = new Date().getDay();  // 0 Sun, 6 Sat
+      const isWeekendToday = todayDow === 0 || todayDow === 6;
+      if (!isWeekendToday) {
+        for (const e of state.entries) {
+          if (countsAsDayOff(e.event_type)
+              && e.status === 'approved'
+              && e.member_id
+              && today >= e.start_date && today <= e.end_date
+              && !offTodayIds.has(e.member_id)) {
+            offTodayIds.add(e.member_id);
+            const m = state.members.find(x => x.id === e.member_id);
+            if (m) offTodayNames.push(m.name);
+          }
         }
+        offTodayNames.sort();
       }
-      offTodayNames.sort();
 
       document.getElementById('kpi-month').textContent = myMonthDays;
       const pendingEl = document.getElementById('kpi-pending');
@@ -2815,8 +2821,13 @@
 
       const countEl = document.querySelector('#kpi-offtoday .count');
       const namesEl = document.getElementById('kpi-offtoday-names');
-      countEl.textContent = offTodayNames.length;
-      namesEl.textContent = formatOffTodayNames(offTodayNames);
+      if (isWeekendToday) {
+        countEl.textContent = '—';
+        namesEl.textContent = 'Weekend — no coverage';
+      } else {
+        countEl.textContent = offTodayNames.length;
+        namesEl.textContent = formatOffTodayNames(offTodayNames);
+      }
     }
 
     function formatOffTodayNames(names) {
