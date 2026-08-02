@@ -5,7 +5,7 @@ import {
   isYmd, isHttpUrl,
   timeAwayConflicts, classifyConflict, effectiveTimeAwayRange,
   summerCapCheck, SUMMER_PTO_LIMIT_DAYS,
-  dayCount, formatRange,
+  businessDaysBetween, formatRange,
 } from './_lib.js';
 import { sendPush } from './_push.js';
 
@@ -167,7 +167,7 @@ export default async function handler(req, res) {
   }
 
   const entry = insert.data;
-  const days = dayCount(entry.start_date, entry.end_date);
+  const days = businessDaysBetween(entry.start_date, entry.end_date);
   const range = formatRange(entry.start_date, entry.end_date);
   const typeLabel = TYPE_LABEL[entry.event_type] || entry.event_type;
 

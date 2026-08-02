@@ -2371,6 +2371,14 @@
       return count;
     }
 
+    // Business-day overlap between two YYYY-MM-DD ranges. Mon-Fri only.
+    function businessDaysOverlap(s1, e1, s2, e2) {
+      const start = s1 > s2 ? s1 : s2;
+      const end   = e1 < e2 ? e1 : e2;
+      if (!start || !end || end < start) return 0;
+      return businessDayCount(start, end);
+    }
+
     function clipToYear(startYmd, endYmd, year) {
       const yStart = `${year}-01-01`;
       const yEnd   = `${year}-12-31`;
@@ -2736,7 +2744,7 @@
         const meta = TYPE_META[e.event_type] || { tag:'?', label:'?', category:'time_away' };
         const member = e.member_id ? state.members.find(m => m.id === e.member_id) : null;
         const memberName = member?.name || 'Unknown';
-        const days = expandRange(e.start_date, e.end_date).length;
+        const days = businessDayCount(e.start_date, e.end_date);
         const range = e.start_date === e.end_date
           ? formatDayLong(e.start_date)
           : `${formatDayLong(e.start_date)} → ${formatDayLong(e.end_date)}`;
@@ -2784,8 +2792,10 @@
         // Pending KPI: admin sees all, members only see their own.
         if (e.status === 'pending' && (isAdmin || e.member_id === state.me.id)) pending++;
         if (countsAsDayOff(e.event_type) && e.member_id === state.me.id && e.status === 'approved') {
-          myMonthDays += daysOverlap(e.start_date, e.end_date, monthStart, monthEnd);
-          myYTD       += daysOverlap(e.start_date, e.end_date, yearStart, yearEnd);
+          // Business days only — MGSA doesn't work weekends, so a Fri-Mon
+          // PTO counts as 2 days off, not 4.
+          myMonthDays += businessDaysOverlap(e.start_date, e.end_date, monthStart, monthEnd);
+          myYTD       += businessDaysOverlap(e.start_date, e.end_date, yearStart, yearEnd);
         }
       }
 
@@ -3415,7 +3425,7 @@
       const member = entry.member_id ? state.members.find(m => m.id === entry.member_id) : null;
       const meta = TYPE_META[entry.event_type] || {};
       const isTimeAway = meta.category === 'time_away';
-      const days = expandRange(entry.start_date, entry.end_date).length;
+      const days = businessDayCount(entry.start_date, entry.end_date);
       const range = entry.start_date === entry.end_date
         ? formatDayLong(entry.start_date)
         : `${formatDayLong(entry.start_date)} → ${formatDayLong(entry.end_date)}`;
