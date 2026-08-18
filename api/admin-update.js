@@ -1,6 +1,6 @@
 import {
   serviceClient, readJson, send, methodGuard, verifyAdminToken,
-  ALL_TYPES, TYPE_LABEL, TIME_AWAY_TYPES,
+  ALL_TYPES, TYPE_LABEL, TIME_AWAY_TYPES, categoryFor,
   isYmd, isHttpUrl, formatRange, logAdminAction,
 } from './_lib.js';
 import { sendPush } from './_push.js';
@@ -47,6 +47,13 @@ async function handleCreate(supa, body, res) {
   }
   const memberId = e.member_id || null;
   const title    = (typeof e.title === 'string' && e.title.trim()) ? e.title.trim() : null;
+  // Time Away and Coverage Adds MUST have a member — otherwise the chip
+  // renders orphaned (' @ Site' with no name). Events (Note, Holiday,
+  // etc.) may still be title-only.
+  const cat = categoryFor(e.event_type);
+  if ((cat === 'time_away' || cat === 'coverage_adds') && !memberId) {
+    return send(res, 400, { error: 'member_required', detail: 'Time Away and Coverage Adds must have a member.' });
+  }
   if (!memberId && !title) return send(res, 400, { error: 'title_or_member_required' });
 
   const isTimeAway = TIME_AWAY_TYPES.includes(e.event_type);

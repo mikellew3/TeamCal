@@ -3186,6 +3186,13 @@
       } else {
         name = entry.title ? entry.title : (member ? member.name.split(' ')[0] : 'Team');
       }
+      // Rescue an orphan Coverage or Time Away chip that has no member and
+      // a site-suffixed title ('@ IHP'). Without this it'd render as blank
+      // space + @ Site.
+      if ((meta.category === 'coverage_adds' || meta.category === 'time_away')
+          && !member && /^\s*@\s/.test(name)) {
+        name = (meta.category === 'coverage_adds' ? 'Coverage ' : 'Off ') + name.trim();
+      }
       // Swap chips always spell out which side of the swap this is, so a
       // pair of chips in the same week reads 'Matt · Here' + 'Matt · Off'
       // at a glance regardless of category color.
@@ -4087,6 +4094,15 @@
         notes:      document.getElementById('add-notes').value.trim() || null,
         conference_link: (LINK_TYPES.has(eventType) && conf) ? conf : null,
       };
+      // Time Away and Coverage Adds are person-bound — no member = orphan
+      // chip that renders as ' @ Site' or similar. Only Events (Note,
+      // Holiday, Onboarding, etc.) may be title-only.
+      const catForType = TYPE_META[eventType]?.category;
+      if (!member_id && (catForType === 'time_away' || catForType === 'coverage_adds')) {
+        toast('Pick a member for Time Away and Coverage Adds.', 'error');
+        btn.disabled = false;
+        return;
+      }
       if (!member_id && !entry.title) {
         toast('Pick a member or enter a title.', 'error');
         btn.disabled = false;
@@ -4179,6 +4195,11 @@
       };
       // Only include status when category is time_away (others have no status concept).
       if (cat === 'time_away') patch.status = document.getElementById('edit-status').value;
+      if (!patch.member_id && (cat === 'time_away' || cat === 'coverage_adds')) {
+        toast('Pick a member for Time Away and Coverage Adds.', 'error');
+        btn.disabled = false;
+        return;
+      }
       if (!patch.member_id && !patch.title) {
         toast('Pick a member or enter a title.', 'error');
         btn.disabled = false;
