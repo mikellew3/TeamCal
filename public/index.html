@@ -3168,12 +3168,13 @@
       if (entry.member_id === state.me?.id) chip.classList.add('mine');
 
       const member = entry.member_id ? state.members.find(m => m.id === entry.member_id) : null;
-      // Coverage Adds with a member: lead with the first name so the
-      // chip reads 'Maeve · M, W, Th, F'. If the title already starts
-      // with the name (e.g. site-suffixed 'Jess @ Waltham'), don't
-      // duplicate. Events keep title-first since they're not member-bound.
+      // Time Away and Coverage Adds with a member: always lead with the
+      // first name so the chip reads 'Matt · @ IHP' or 'Maeve · M, W, Th, F'.
+      // If the title already starts with the name (e.g. site-suffixed
+      // 'Jess @ Waltham' from the composeTitleWithSite path), don't duplicate.
+      // Events keep title-first since they're not person-bound.
       let name;
-      if (meta.category === 'coverage_adds' && member) {
+      if ((meta.category === 'coverage_adds' || meta.category === 'time_away') && member) {
         const firstName = member.name.split(' ')[0];
         const title = (entry.title || '').trim();
         if (!title) {
