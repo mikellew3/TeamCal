@@ -1859,14 +1859,35 @@
       state.members = data || [];
     }
 
+    // PostgREST caps a single response at 1000 rows. Once calendar_entries
+    // crossed that, an unpaginated `.order('start_date')` fetch silently
+    // returned only the OLDEST 1000 rows — every current and future entry,
+    // pending requests included, vanished from state.entries. That made the
+    // 'pending request(s)' button compute 0 and disable itself, so tapping
+    // it did nothing at all. Page through until the server returns a short
+    // page. Tiebreak on id so the sort is stable across page boundaries.
+    const ENTRY_PAGE_SIZE = 1000;
+    const ENTRY_FETCH_CAP = 100000;   // runaway guard
+
     async function loadEntries() {
-      const { data, error } = await state.supabase
-        .from('calendar_entries')
-        .select('*')
-        .order('start_date');
-      if (error) throw error;
-      state.entries = data || [];
-      setSync(`Last sync ${new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`);
+      const all = [];
+      let truncated = false;
+      for (let from = 0; ; from += ENTRY_PAGE_SIZE) {
+        const { data, error } = await state.supabase
+          .from('calendar_entries')
+          .select('*')
+          .order('start_date')
+          .order('id')
+          .range(from, from + ENTRY_PAGE_SIZE - 1);
+        if (error) throw error;
+        const batch = data || [];
+        all.push(...batch);
+        if (batch.length < ENTRY_PAGE_SIZE) break;
+        if (all.length >= ENTRY_FETCH_CAP) { truncated = true; break; }
+      }
+      state.entries = all;
+      const time = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+      setSync(`Last sync ${time} · ${all.length} entries${truncated ? ' (truncated)' : ''}`, truncated);
     }
 
     async function refresh() {
@@ -2129,8 +2150,12 @@
       if (!isAdminMode()) return;
       const pending = state.entries.filter(e => e.status === 'pending').length;
       document.getElementById('admin-pending-count').textContent = pending;
+      // Deliberately NOT disabled at zero. A disabled button swallows the
+      // click with no feedback at all, which is indistinguishable from the
+      // app being broken — that's exactly how the truncated-fetch bug hid.
+      // Always open the modal; it states 'All caught up' when empty.
       const trig = document.getElementById('admin-pending-trigger');
-      if (trig) trig.disabled = pending === 0;
+      if (trig) trig.disabled = false;
     }
 
     const AUDIT_LABELS = {
