@@ -260,19 +260,25 @@ export async function timeAwayConflicts(supabase, requesterId, startDate, endDat
 }
 
 export function classifyConflict(dayCounts) {
+  // FMLA is baseline extended leave — a single overlap with an FMLA holder
+  // shouldn't yellow-warn or block. Only DOUBLING on top of FMLA (someone
+  // else already off) triggers the hard block, which the 2-off rule below
+  // catches naturally. So for the watch and consecutive-overlap rules we
+  // count only NON-FMLA others; the 2-off rule keeps counting everyone.
+  const nonFmlaCount = d => (d.others_off || 0) - (d.others_fmla || 0);
+
   // Hard block #1: any single day where ≥2 other members are already off.
-  // This already covers the 'doubling on FMLA' case: an FMLA holder counts
-  // as one 'other off', so an existing PTO on top of an FMLA day means a
-  // new request would see 2+ others off and get blocked. A single PTO
-  // overlapping an FMLA day (only the FMLA person off) stays in the
-  // 'watch with note' state below.
+  // FMLA + another person off = 2 others = block (the 'doubling on FMLA'
+  // case). FMLA alone doesn't trip anything.
   const twoOff = dayCounts.filter(d => d.others_off >= 2);
   if (twoOff.length > 0) return { state: 'block', reason: 'two_off', blockedDays: twoOff };
 
-  // Hard block #2: two or more *consecutive* days where ≥1 other is off.
+  // Hard block #2: two or more *consecutive* days where ≥1 NON-FMLA other is
+  // off. Long FMLA stretches (weeks/months) don't create rolling blocks for
+  // solo PTO taken during them — that's what 'FMLA is baseline' means.
   let runStart = -1, longestRun = 0, longestStart = -1;
   for (let i = 0; i < dayCounts.length; i++) {
-    if (dayCounts[i].others_off >= 1) {
+    if (nonFmlaCount(dayCounts[i]) >= 1) {
       if (runStart === -1) runStart = i;
       const runLen = i - runStart + 1;
       if (runLen > longestRun) { longestRun = runLen; longestStart = runStart; }
@@ -285,8 +291,9 @@ export function classifyConflict(dayCounts) {
     return { state: 'block', reason: 'consecutive_overlap', blockedDays };
   }
 
-  // Soft warning: exactly one day with someone else off.
-  const overlap = dayCounts.filter(d => d.others_off >= 1);
+  // Soft warning: exactly one day with a NON-FMLA other off. FMLA-only
+  // overlaps get a clean pass (no note required).
+  const overlap = dayCounts.filter(d => nonFmlaCount(d) >= 1);
   if (overlap.length > 0) {
     return { state: 'watch', reason: 'single_day_overlap', blockedDays: overlap, requiresNote: true };
   }
