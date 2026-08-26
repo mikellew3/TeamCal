@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { readJson, send, methodGuard, mintAdminToken, serviceClient, isAdminRole, ROLE_LABEL } from './_lib.js';
+import { readJson, send, methodGuard, mintAdminToken, serviceClient, isAdminRole, ROLE_LABEL, nextAvailableColor } from './_lib.js';
 
 // Mint an identity-bearing admin token. A valid Supabase JWT is REQUIRED on
 // every path — the token records which admin is acting, so there is no way
@@ -30,10 +30,14 @@ export default async function handler(req, res) {
   }
 
   let member;
+  let authUserId = null, authEmail = '', authName = '';
   try {
     const { data, error } = await supa.auth.getUser(jwt);
     if (error || !data?.user) return send(res, 401, { error: 'invalid_token' });
     const user = data.user;
+    authUserId = user.id;
+    authEmail  = user.email || '';
+    authName   = user.user_metadata?.full_name || '';
 
     // Two column sets: with role, and without. The second is deploy-order
     // insurance for the window before the role migration is applied —
@@ -67,11 +71,16 @@ export default async function handler(req, res) {
     return send(res, 500, { error: 'server_error' });
   }
 
-  if (!member) return send(res, 403, { error: 'not_a_team_member' });
-  if (!member.active) return send(res, 403, { error: 'inactive_member' });
+  const adminEmail  = (process.env.ADMIN_EMAIL || '').toLowerCase();
+  const callerEmail = (authEmail || member?.email || '').toLowerCase();
 
-  // Break-glass: correct password elevates this authenticated caller to full
-  // admin. Also self-heals the owner's role so the password isn't needed again.
+  // ---- Break-glass, evaluated BEFORE the missing/inactive bailouts ----
+  // This is the only way back in if the owner's row is deleted or
+  // deactivated, so it must not depend on that row existing. It is
+  // restricted to ADMIN_EMAIL: ADMIN_PASSWORD used to be THE admin
+  // credential, so anyone who has ever held admin plausibly knows it, and an
+  // unrestricted break-glass would be a one-request self-promotion to full
+  // admin for any associate.
   if (typeof password === 'string' && password.length > 0) {
     const expected = process.env.ADMIN_PASSWORD;
     if (!expected) {
@@ -81,18 +90,41 @@ export default async function handler(req, res) {
     await new Promise(r => setTimeout(r, 250));
     const a = Buffer.from(password);
     const b = Buffer.from(expected);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-      return send(res, 401, { error: 'invalid_password' });
+    const passwordOk = a.length === b.length && crypto.timingSafeEqual(a, b);
+    if (!passwordOk) return send(res, 401, { error: 'invalid_password' });
+    if (!adminEmail || callerEmail !== adminEmail) {
+      return send(res, 403, { error: 'not_admin_user' });
     }
-    if (member.role !== 'admin') {
-      const { data: promoted } = await supa
+
+    // Rebuild or reactivate the owner's row if it's gone or disabled.
+    if (!member) {
+      const { data: recreated, error: cErr } = await supa
         .from('team_members')
-        .update({ role: 'admin' })
-        .eq('id', member.id)
-        .select('id, name, email, role')
+        .insert({
+          auth_user_id: authUserId,
+          name: authName || callerEmail,
+          email: callerEmail,
+          color: await nextAvailableColor(supa, authName || callerEmail),
+          active: true, signup_pending: false, role: 'admin',
+        })
+        .select('id, name, email, role, active')
         .maybeSingle();
-      if (promoted) member = { ...member, ...promoted };
+      if (cErr || !recreated) {
+        console.error('admin-verify break-glass recreate', cErr);
+        return send(res, 500, { error: 'server_error' });
+      }
+      console.warn('[roles] break-glass recreated the owner row');
+      member = recreated;
+    } else if (!member.active || member.role !== 'admin') {
+      const { data: restored } = await supa
+        .from('team_members')
+        .update({ active: true, signup_pending: false, role: 'admin' })
+        .eq('id', member.id)
+        .select('id, name, email, role, active')
+        .maybeSingle();
+      if (restored) member = { ...member, ...restored };
     }
+
     return send(res, 200, {
       token: mintAdminToken({ memberId: member.id, role: 'admin' }),
       role: 'admin',
@@ -101,15 +133,27 @@ export default async function handler(req, res) {
     });
   }
 
+  if (!member) return send(res, 403, { error: 'not_a_team_member' });
+  if (!member.active) return send(res, 403, { error: 'inactive_member' });
+
   // Standard path: role decides.
   let role = member.role;
 
-  // Bootstrap fallback — if the role migration hasn't been applied yet, the
-  // configured ADMIN_EMAIL still elevates (and gets its role written).
-  const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase();
-  if (!isAdminRole(role) && adminEmail && (member.email || '').toLowerCase() === adminEmail) {
-    role = 'admin';
-    await supa.from('team_members').update({ role: 'admin' }).eq('id', member.id);
+  // Bootstrap fallback — the configured ADMIN_EMAIL elevates when there is no
+  // other active Admin yet (fresh install, or the role migration hasn't run).
+  // Gated on "no active admin exists" so it is a bootstrap and not a standing
+  // override: without that check, a full Admin could never demote this
+  // account — the next page load would silently promote it straight back.
+  if (!isAdminRole(role) && adminEmail && callerEmail === adminEmail) {
+    const { count } = await supa
+      .from('team_members')
+      .select('id', { count: 'exact', head: true })
+      .eq('role', 'admin').eq('active', true);
+    if ((count ?? 0) === 0) {
+      role = 'admin';
+      await supa.from('team_members').update({ role: 'admin' }).eq('id', member.id);
+      console.warn('[roles] bootstrapped ADMIN_EMAIL to full admin');
+    }
   }
 
   if (!isAdminRole(role)) return send(res, 403, { error: 'not_admin_user' });

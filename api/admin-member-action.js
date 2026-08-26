@@ -1,4 +1,4 @@
-import { serviceClient, readJson, send, methodGuard, resolveAdmin, nextAvailableColor, logAdminAction, ROLES, isAdminRole } from './_lib.js';
+import { serviceClient, readJson, send, methodGuard, resolveAdmin, nextAvailableColor, logAdminAction, ROLES, isAdminRole, sameId } from './_lib.js';
 
 // POST { token, action, ...args } — single endpoint for all member-mgmt:
 //   action: 'create'      args: { name, email, color, password }
@@ -93,9 +93,23 @@ async function deny(supa, body, res, actor) {
   const { id } = body || {};
   if (!id) return send(res, 400, { error: 'missing_id' });
   const { data: row } = await supa.from('team_members')
-    .select('id, auth_user_id, signup_pending')
+    .select('id, auth_user_id, signup_pending, role')
     .eq('id', id).maybeSingle();
   if (!row) return send(res, 404, { error: 'not_found' });
+  // Deny is for rejecting an unapproved SIGNUP. It hard-deletes the row and
+  // the auth user, so pointing it at an established member — or the last
+  // Admin — is an unrecoverable delete wearing a friendlier name. The UI only
+  // ever offers it on pending signups; enforce that server-side too.
+  if (!row.signup_pending) {
+    return send(res, 400, {
+      error: 'not_a_pending_signup',
+      detail: 'Deny only applies to pending signups. Use Deactivate for an existing member.',
+    });
+  }
+  const blockedDeny = await lastAdminGuard(supa, id, { verb: 'deny' });
+  if (blockedDeny) return send(res, 409, blockedDeny);
+  const guarded = await adminTargetGuard(supa, id, actor, { verb: 'deny' });
+  if (guarded) return send(res, 403, guarded);
   if (row.auth_user_id) {
     await supa.auth.admin.deleteUser(row.auth_user_id).catch(err => console.error('deny deleteUser', err));
   }
@@ -111,6 +125,8 @@ async function setActive(supa, body, res, value, actor) {
   if (!value) {
     const blocked = await lastAdminGuard(supa, id, { verb: 'deactivate' });
     if (blocked) return send(res, 409, blocked);
+    const guarded = await adminTargetGuard(supa, id, actor, { verb: 'deactivate' });
+    if (guarded) return send(res, 403, guarded);
   }
   const { data, error } = await supa.from('team_members')
     .update({ active: value, signup_pending: false })
@@ -140,7 +156,7 @@ async function update(supa, body, res, actor) {
       });
     }
     if (!ROLES.includes(body.role)) return send(res, 400, { error: 'invalid_role' });
-    if (id === actor.memberId) {
+    if (sameId(id, actor.memberId)) {
       return send(res, 403, {
         error: 'self_role_change_forbidden',
         detail: 'You can’t change your own role. Ask another admin.',
@@ -154,6 +170,11 @@ async function update(supa, body, res, actor) {
   }
 
   if (Object.keys(patch).length === 0) return send(res, 400, { error: 'nothing_to_update' });
+
+  if (patch.email || patch.name) {
+    const guarded = await adminTargetGuard(supa, id, actor, { verb: 'edit' });
+    if (guarded) return send(res, 403, guarded);
+  }
 
   // If email is changing, also update the auth user.
   if (patch.email) {
@@ -174,6 +195,8 @@ async function resetPassword(supa, body, res, actor) {
   const { id, password } = body || {};
   if (!id) return send(res, 400, { error: 'missing_id' });
   if (!password || password.length < 8) return send(res, 400, { error: 'invalid_password' });
+  const guarded = await adminTargetGuard(supa, id, actor, { verb: 'reset the password on' });
+  if (guarded) return send(res, 403, guarded);
   const { data: row } = await supa.from('team_members').select('auth_user_id').eq('id', id).maybeSingle();
   if (!row?.auth_user_id) return send(res, 404, { error: 'no_auth_user' });
   const { error } = await supa.auth.admin.updateUserById(row.auth_user_id, { password });
@@ -189,6 +212,8 @@ async function hardDelete(supa, body, res, actor) {
   if (!id) return send(res, 400, { error: 'missing_id' });
   const blocked = await lastAdminGuard(supa, id, { verb: 'delete' });
   if (blocked) return send(res, 409, blocked);
+  const guarded = await adminTargetGuard(supa, id, actor, { verb: 'delete' });
+  if (guarded) return send(res, 403, guarded);
   const { data: row } = await supa.from('team_members').select('auth_user_id').eq('id', id).maybeSingle();
   if (!row) return send(res, 404, { error: 'not_found' });
   if (row.auth_user_id) {
@@ -198,6 +223,22 @@ async function hardDelete(supa, body, res, actor) {
   if (error) throw error;
   logAdminAction(supa, { actor: actor.email, action: 'member_delete', target_type: 'team_member', target_id: id, payload: { auth_user_id: row.auth_user_id } });
   return send(res, 200, { ok: true });
+}
+
+// An Associate Admin must not perform account actions against an admin-role
+// account. Resetting a full Admin's password (or changing their email) hands
+// over that account, which is a complete bypass of every role rule below it.
+// Full Admins may act on anyone.
+async function adminTargetGuard(supa, id, actor, { verb }) {
+  if (actor.caps.manageRoles) return null;          // full Admin: allowed
+  const { data: target } = await supa
+    .from('team_members').select('id, role').eq('id', id).maybeSingle();
+  if (!target || !isAdminRole(target.role)) return null;
+  if (sameId(target.id, actor.memberId)) return null;  // acting on yourself is fine
+  return {
+    error: 'admin_target_forbidden',
+    detail: `Only a full Admin can ${verb} another admin's account.`,
+  };
 }
 
 // Refuse to remove the last full Admin — demoting, deactivating, or deleting

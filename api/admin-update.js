@@ -1,5 +1,5 @@
 import {
-  serviceClient, readJson, send, methodGuard, resolveAdmin,
+  serviceClient, readJson, send, methodGuard, resolveAdmin, sameId,
   ALL_TYPES, TYPE_LABEL, TIME_AWAY_TYPES, categoryFor,
   isYmd, isHttpUrl, formatRange, logAdminAction,
 } from './_lib.js';
@@ -47,7 +47,7 @@ export default async function handler(req, res) {
 function selfApprovalBlocked(actor, { memberId, eventType, status }) {
   return !actor.caps.decideOwnTimeAway
       && !!memberId
-      && memberId === actor.memberId
+      && sameId(memberId, actor.memberId)
       && TIME_AWAY_TYPES.includes(eventType)
       && status === 'approved';
 }

@@ -72,7 +72,7 @@ export default async function handler(req, res) {
 
     if (kind === 'list')      return await listMessages(supa, entryId, res);
     if (kind === 'mark_read') return await markRead(supa, { entryId, isAdmin }, res);
-    if (kind === 'post')      return await postMessage(supa, { entry, body: body?.body, isAdmin, callerMemberId, callerName: callerName || adminActor?.name }, res);
+    if (kind === 'post')      return await postMessage(supa, { entry, body: body?.body, isAdmin, callerMemberId, callerName: callerName || adminActor?.name, adminEmail: adminActor?.email }, res);
   } catch (err) {
     console.error('entry-messages', err);
     return send(res, 500, { error: 'server_error', detail: String(err?.message || err) });
@@ -186,7 +186,7 @@ async function discussionsSummary(supa, { isAdmin, callerMemberId, limit }, res)
   return send(res, 200, { discussions: enriched.slice(0, cap) });
 }
 
-async function postMessage(supa, { entry, body, isAdmin, callerMemberId, callerName }, res) {
+async function postMessage(supa, { entry, body, isAdmin, callerMemberId, callerName, adminEmail }, res) {
   const text = (typeof body === 'string' && body.trim()) ? body.trim() : '';
   if (!text) return send(res, 400, { error: 'empty_message' });
   if (text.length > 1000) return send(res, 400, { error: 'message_too_long' });
@@ -257,7 +257,7 @@ async function postMessage(supa, { entry, body, isAdmin, callerMemberId, callerN
 
   if (isAdmin) {
     logAdminAction(supa, {
-      actor: adminActor.email, action: 'entry_message',
+      actor: adminEmail, action: 'entry_message',
       target_type: 'calendar_entry', target_id: entry.id,
       payload: { length: text.length },
     });

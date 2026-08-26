@@ -73,6 +73,17 @@ const CAPS = {
   member:          { decideOwnTimeAway: false, manageRoles: false },
 };
 
+// Postgres accepts non-canonical UUID text — uppercase hex, {braces},
+// hyphenless — and normalizes it on write. A raw `===` between a
+// request-body string and a DB-canonical uuid therefore compares unequal
+// for what is the SAME row, which would let a hand-rolled request walk
+// straight past an identity check. Compare normalized.
+export function sameId(a, b) {
+  if (!a || !b) return false;
+  const norm = v => String(v).trim().toLowerCase().replace(/[{}\s-]/g, '');
+  return norm(a) === norm(b);
+}
+
 export function capsFor(role) {
   return CAPS[role] || CAPS.member;
 }

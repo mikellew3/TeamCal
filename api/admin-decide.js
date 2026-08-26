@@ -1,5 +1,5 @@
 import {
-  serviceClient, readJson, send, methodGuard, resolveAdmin,
+  serviceClient, readJson, send, methodGuard, resolveAdmin, sameId,
   TIME_AWAY_TYPES, TYPE_LABEL,
   timeAwayConflicts, classifyConflict, effectiveTimeAwayRange,
   formatRange, logAdminAction,
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
     // three are decisions on your own request. Full admins are exempt.
     if (!actor.caps.decideOwnTimeAway
         && entry.member_id
-        && entry.member_id === actor.memberId
+        && sameId(entry.member_id, actor.memberId)
         && TIME_AWAY_TYPES.includes(entry.event_type)) {
       return send(res, 403, {
         error: 'self_decide_forbidden',

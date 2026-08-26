@@ -1404,6 +1404,9 @@
         </div>
         <div class="field" id="edit-status-field">
           <label for="edit-status">Status</label>
+          <div id="edit-self-note" hidden style="font-size:10px;color:var(--warn);margin-bottom:4px;letter-spacing:0.02em;">
+            This is your own time away — a full Admin has to approve it.
+          </div>
           <select id="edit-status">
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>
@@ -2050,6 +2053,7 @@
       editCat.addEventListener('change', () => { populateTypeSelect('edit-category', 'edit-type'); updateEditCmeAndStatusVisibility(); });
       editTypeEl.addEventListener('change', updateEditCmeAndStatusVisibility);
       populateMemberSelect('edit-member', true);
+      document.getElementById('edit-member').addEventListener('change', syncEditSelfApprovalGuard);
 
       // Auto-fill end date from start date (Edit modal).
       const editStart = document.getElementById('edit-start');
@@ -2120,12 +2124,32 @@
       note.hidden = !blocked;
       if (blocked) statusSel.value = 'pending';
     }
+    // Mirror of syncSelfApprovalGuard for the Edit modal — without this an
+    // Associate Admin can pick Approved on their own entry and get a bare
+    // "Update failed" with no reason.
+    function syncEditSelfApprovalGuard() {
+      const statusSel = document.getElementById('edit-status');
+      const approvedOpt = statusSel?.querySelector('option[value="approved"]');
+      const note = document.getElementById('edit-self-note');
+      if (!statusSel || !approvedOpt || !note) return;
+      const cat = document.getElementById('edit-category').value;
+      const memberId = document.getElementById('edit-member').value || null;
+      const blocked = !isFullAdmin()
+                   && cat === 'time_away'
+                   && !!memberId
+                   && memberId === state.me?.id;
+      approvedOpt.disabled = blocked;
+      note.hidden = !blocked;
+      if (blocked && statusSel.value === 'approved') statusSel.value = 'pending';
+    }
+
     function updateEditCmeAndStatusVisibility() {
       const t = document.getElementById('edit-type').value;
       const cat = document.getElementById('edit-category').value;
       document.getElementById('edit-conf-field').hidden = !LINK_TYPES.has(t);
       document.getElementById('edit-attach-field').hidden = !FILE_TYPES.has(t);
       document.getElementById('edit-status-field').hidden = cat !== 'time_away';
+      syncEditSelfApprovalGuard();
       document.getElementById('edit-site-field').hidden = cat !== 'coverage_adds';
     }
 
@@ -2146,7 +2170,13 @@
     // Full Admin vs Associate Admin. The server is the enforcer for every
     // rule below — these only keep the UI honest so nobody is offered a
     // button that would 403. Treat an unknown role as the restricted one.
-    function adminRole()      { return state.adminRole || 'admin'; }
+    function adminRole() {
+      // Token role first (server-issued), then the member row, then the
+      // RESTRICTED tier. Never default to 'admin' — a session carried across
+      // a deploy, or partially-cleared sessionStorage, would otherwise render
+      // the full-admin UI and hand back nothing but 403s.
+      return state.adminRole || state.me?.role || 'associate_admin';
+    }
     function isFullAdmin()    { return isAdminMode() && adminRole() === 'admin'; }
     function canManageRoles() { return isFullAdmin(); }
     // May this admin put THIS entry into an approved state?
@@ -4252,6 +4282,7 @@
       document.getElementById('edit-start').value = entry.start_date;
       document.getElementById('edit-end').value = entry.end_date;
       document.getElementById('edit-status').value = entry.status;
+      syncEditSelfApprovalGuard();
       document.getElementById('edit-notes').value = entry.notes || '';
       updateEditCmeAndStatusVisibility();
       closeModal('detail-backdrop');
