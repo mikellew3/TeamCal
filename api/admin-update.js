@@ -1,5 +1,5 @@
 import {
-  serviceClient, readJson, send, methodGuard, verifyAdminToken,
+  serviceClient, readJson, send, methodGuard, resolveAdmin,
   ALL_TYPES, TYPE_LABEL, TIME_AWAY_TYPES, categoryFor,
   isYmd, isHttpUrl, formatRange, logAdminAction,
 } from './_lib.js';
@@ -15,7 +15,6 @@ import { sendPush } from './_push.js';
 export default async function handler(req, res) {
   if (!methodGuard(req, res, ['POST'])) return;
   const body = await readJson(req);
-  if (!verifyAdminToken(body?.token)) return send(res, 401, { error: 'unauthorized' });
 
   let action = body?.action;
   if (!action) {
@@ -26,11 +25,14 @@ export default async function handler(req, res) {
 
   try {
     const supa = serviceClient();
+    const actor = await resolveAdmin(supa, body?.token);
+    if (!actor) return send(res, 401, { error: 'unauthorized' });
+
     switch (action) {
-      case 'create':     return await handleCreate(supa, body, res);
-      case 'update':     return await handleUpdate(supa, body, res);
-      case 'delete':     return await handleDelete(supa, body, res);
-      case 'remove_day': return await handleRemoveDay(supa, body, res);
+      case 'create':     return await handleCreate(supa, body, res, actor);
+      case 'update':     return await handleUpdate(supa, body, res, actor);
+      case 'delete':     return await handleDelete(supa, body, res, actor);
+      case 'remove_day': return await handleRemoveDay(supa, body, res, actor);
       default:           return send(res, 400, { error: 'invalid_action' });
     }
   } catch (err) {
@@ -39,7 +41,23 @@ export default async function handler(req, res) {
   }
 }
 
-async function handleCreate(supa, body, res) {
+// The separation-of-duties rule, stated once. An Associate Admin may not put
+// THEIR OWN time away into an approved state by any route. Filing it as
+// pending is fine — that's just requesting, and an admin still decides it.
+function selfApprovalBlocked(actor, { memberId, eventType, status }) {
+  return !actor.caps.decideOwnTimeAway
+      && !!memberId
+      && memberId === actor.memberId
+      && TIME_AWAY_TYPES.includes(eventType)
+      && status === 'approved';
+}
+
+const SELF_APPROVE_ERROR = {
+  error: 'self_approve_forbidden',
+  detail: 'You can’t approve your own time away. Save it as Pending and an admin will review it.',
+};
+
+async function handleCreate(supa, body, res, actor) {
   const e = body?.entry || {};
   if (!ALL_TYPES.includes(e.event_type)) return send(res, 400, { error: 'invalid_type' });
   if (!isYmd(e.start_date) || !isYmd(e.end_date) || e.end_date < e.start_date) {
@@ -58,6 +76,14 @@ async function handleCreate(supa, body, res) {
 
   const isTimeAway = TIME_AWAY_TYPES.includes(e.event_type);
   const status = isTimeAway && ['pending', 'approved', 'denied'].includes(e.status) ? e.status : 'approved';
+
+  // NOTE the default above: an admin-created entry lands as 'approved' unless
+  // told otherwise. That makes Add Entry a self-approval route, so the rule
+  // has to be checked here and not only in admin-decide.
+  if (selfApprovalBlocked(actor, { memberId, eventType: e.event_type, status })) {
+    return send(res, 403, SELF_APPROVE_ERROR);
+  }
+
   const conferenceLink = isHttpUrl(e.conference_link) ? e.conference_link.trim() : null;
   const attachmentPath = (typeof e.attachment_path === 'string' && e.attachment_path.trim()) ? e.attachment_path.trim() : null;
 
@@ -74,23 +100,42 @@ async function handleCreate(supa, body, res) {
       attachment_path: attachmentPath,
       status,
       decided_at: status === 'pending' ? null : new Date().toISOString(),
-      decided_by: status === 'pending' ? null : 'admin',
+      decided_by: status === 'pending' ? null : (actor.name || actor.email || 'admin'),
     })
     .select('*')
     .single();
   if (error) throw error;
   logAdminAction(supa, {
-    actor: null, action: 'entry_create',
+    actor: actor.email, action: 'entry_create',
     target_type: 'calendar_entry', target_id: data.id,
-    payload: { event_type: data.event_type, member_id: data.member_id, start_date: data.start_date, end_date: data.end_date, status: data.status },
+    payload: { event_type: data.event_type, member_id: data.member_id, start_date: data.start_date, end_date: data.end_date, status: data.status, actor_role: actor.role },
   });
   return send(res, 200, { entry: data });
 }
 
-async function handleUpdate(supa, body, res) {
+async function handleUpdate(supa, body, res, actor) {
   const { id, patch } = body || {};
   if (!id) return send(res, 400, { error: 'invalid_payload' });
   if (!patch || typeof patch !== 'object') return send(res, 400, { error: 'invalid_payload' });
+
+  // Read the current row so the self-approval check runs against the RESULT
+  // of the patch. Otherwise an Associate Admin could flip their own pending
+  // entry to approved, or reassign someone else's approved entry to
+  // themselves — both land in the same forbidden state.
+  const { data: before, error: bErr } = await supa
+    .from('calendar_entries')
+    .select('member_id, event_type, status')
+    .eq('id', id)
+    .maybeSingle();
+  if (bErr) throw bErr;
+  if (!before) return send(res, 404, { error: 'not_found' });
+
+  const nextMemberId = ('member_id' in patch) ? (patch.member_id || null) : before.member_id;
+  const nextType     = ('event_type' in patch) ? patch.event_type : before.event_type;
+  const nextStatus   = ('status' in patch) ? patch.status : before.status;
+  if (selfApprovalBlocked(actor, { memberId: nextMemberId, eventType: nextType, status: nextStatus })) {
+    return send(res, 403, SELF_APPROVE_ERROR);
+  }
 
   const update = {};
   if ('event_type' in patch) {
@@ -123,7 +168,7 @@ async function handleUpdate(supa, body, res) {
     if (!['pending', 'approved', 'denied'].includes(patch.status)) return send(res, 400, { error: 'invalid_status' });
     update.status = patch.status;
     update.decided_at = patch.status === 'pending' ? null : new Date().toISOString();
-    update.decided_by = patch.status === 'pending' ? null : 'admin';
+    update.decided_by = patch.status === 'pending' ? null : (actor.name || actor.email || 'admin');
   }
   if ('sort_order' in patch) {
     const n = patch.sort_order;
@@ -148,9 +193,9 @@ async function handleUpdate(supa, body, res) {
   }
 
   logAdminAction(supa, {
-    actor: null, action: 'entry_update',
+    actor: actor.email, action: 'entry_update',
     target_type: 'calendar_entry', target_id: id,
-    payload: { fields: Object.keys(update) },
+    payload: { fields: Object.keys(update), actor_role: actor.role },
   });
 
   if (data?.member_id && TIME_AWAY_TYPES.includes(data.event_type)) {
@@ -170,7 +215,7 @@ async function handleUpdate(supa, body, res) {
   return send(res, 200, { entry: data });
 }
 
-async function handleDelete(supa, body, res) {
+async function handleDelete(supa, body, res, actor) {
   const { id } = body || {};
   if (!id) return send(res, 400, { error: 'missing_id' });
 
@@ -184,9 +229,9 @@ async function handleDelete(supa, body, res) {
   if (error) throw error;
 
   logAdminAction(supa, {
-    actor: null, action: 'entry_delete',
+    actor: actor.email, action: 'entry_delete',
     target_type: 'calendar_entry', target_id: id,
-    payload: existing ? { member_id: existing.member_id, event_type: existing.event_type } : null,
+    payload: existing ? { member_id: existing.member_id, event_type: existing.event_type, actor_role: actor.role } : { actor_role: actor.role },
   });
 
   if (existing?.member_id && TIME_AWAY_TYPES.includes(existing.event_type)) {
@@ -211,7 +256,7 @@ function addDay(ymd, delta) {
   return d.toISOString().slice(0, 10);
 }
 
-async function handleRemoveDay(supa, body, res) {
+async function handleRemoveDay(supa, body, res, actor) {
   const { id, remove_day } = body || {};
   if (!id) return send(res, 400, { error: 'invalid_payload' });
   if (!isYmd(remove_day)) return send(res, 400, { error: 'invalid_dates' });
@@ -232,7 +277,7 @@ async function handleRemoveDay(supa, body, res) {
     const { error } = await supa.from('calendar_entries').delete().eq('id', id);
     if (error) throw error;
     logAdminAction(supa, {
-      actor: null, action: 'entry_remove_day_delete',
+      actor: actor.email, action: 'entry_remove_day_delete',
       target_type: 'calendar_entry', target_id: id,
       payload: { day: remove_day },
     });
@@ -245,7 +290,7 @@ async function handleRemoveDay(supa, body, res) {
       .update({ start_date: newStart })
       .eq('id', id).select('*').single();
     if (error) throw error;
-    logAdminAction(supa, { actor: null, action: 'entry_remove_day_trim', target_type: 'calendar_entry', target_id: id, payload: { day: remove_day, side: 'start' } });
+    logAdminAction(supa, { actor: actor.email, action: 'entry_remove_day_trim', target_type: 'calendar_entry', target_id: id, payload: { day: remove_day, side: 'start' } });
     return send(res, 200, { entry: data, trimmed: 'start' });
   }
 
@@ -255,7 +300,7 @@ async function handleRemoveDay(supa, body, res) {
       .update({ end_date: newEnd })
       .eq('id', id).select('*').single();
     if (error) throw error;
-    logAdminAction(supa, { actor: null, action: 'entry_remove_day_trim', target_type: 'calendar_entry', target_id: id, payload: { day: remove_day, side: 'end' } });
+    logAdminAction(supa, { actor: actor.email, action: 'entry_remove_day_trim', target_type: 'calendar_entry', target_id: id, payload: { day: remove_day, side: 'end' } });
     return send(res, 200, { entry: data, trimmed: 'end' });
   }
 
@@ -278,6 +323,6 @@ async function handleRemoveDay(supa, body, res) {
     decided_by: cur.decided_by,
   }).select('*').single();
   if (rErr) throw rErr;
-  logAdminAction(supa, { actor: null, action: 'entry_remove_day_split', target_type: 'calendar_entry', target_id: id, payload: { day: remove_day, new_id: rightRow.id } });
+  logAdminAction(supa, { actor: actor.email, action: 'entry_remove_day_split', target_type: 'calendar_entry', target_id: id, payload: { day: remove_day, new_id: rightRow.id } });
   return send(res, 200, { split: true, new_entry_id: rightRow.id });
 }

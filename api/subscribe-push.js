@@ -1,5 +1,5 @@
 import {
-  serviceClient, readJson, send, methodGuard, verifyAdminToken,
+  serviceClient, readJson, send, methodGuard, verifyAdminToken, isAdminRole,
 } from './_lib.js';
 
 // POST { subscription, scope } where scope is 'member' or 'admin'.
@@ -45,11 +45,14 @@ export default async function handler(req, res) {
     const member = await resolveMember(supa, userData.user);
     if (!member) return send(res, 403, { error: 'not_a_team_member' });
     memberId = member.id;
-    // Dual-flag the row when the subscriber is also the admin so they
-    // receive admin pings (new requests) alongside their own member pings.
+    // Dual-flag the row when the subscriber holds an admin role, so every
+    // admin (full or associate) receives admin pings — new requests, etc. —
+    // alongside their own member pings. ADMIN_EMAIL stays as a fallback for
+    // the owner in case the role migration hasn't run yet.
     const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase();
     const userEmail  = (userData.user.email || '').toLowerCase();
-    if (adminEmail && userEmail && userEmail === adminEmail) isAdmin = true;
+    if (isAdminRole(member.role)) isAdmin = true;
+    else if (adminEmail && userEmail && userEmail === adminEmail) isAdmin = true;
   }
 
   // Upsert by endpoint (one row per device).
@@ -81,13 +84,13 @@ export default async function handler(req, res) {
 async function resolveMember(supa, user) {
   let { data } = await supa
     .from('team_members')
-    .select('id, name, email, active')
+    .select('id, name, email, active, role')
     .eq('auth_user_id', user.id)
     .maybeSingle();
   if (!data && user.email) {
     const fb = await supa
       .from('team_members')
-      .select('id, name, email, active')
+      .select('id, name, email, active, role')
       .ilike('email', user.email)
       .maybeSingle();
     if (fb.data) data = fb.data;

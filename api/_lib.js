@@ -41,35 +41,137 @@ export function anonClient() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-// Admin token: HMAC-SHA256(secret, "admin:" + dayNumber).
-// Token is valid for the current day OR the previous day (24h grace window).
+// ============================================================
+// ROLES + CAPABILITIES
+// ============================================================
+export const ROLES = ['member', 'associate_admin', 'admin'];
+export const ROLE_LABEL = {
+  member: 'Member',
+  associate_admin: 'Associate Admin',
+  admin: 'Admin',
+};
+
+export function isAdminRole(role) {
+  return role === 'admin' || role === 'associate_admin';
+}
+
+// Associate Admin has the full admin surface with exactly two carve-outs.
+//
+//   decideOwnTimeAway — the separation-of-duties rule. Enforced on every
+//     route that can land a time-away entry in 'approved': admin-decide,
+//     admin-update create, and admin-update update. Blocking only the
+//     Approve button would be theatre, since admin-created entries default
+//     to approved (see handleCreate) — they could self-approve via Add Entry
+//     without ever touching a decision.
+//
+//   manageRoles — without this an associate could set their own role to
+//     'admin' and the rule above evaporates in one click. Role changes are
+//     admin-only, and nobody edits their own role.
+const CAPS = {
+  admin:           { decideOwnTimeAway: true,  manageRoles: true  },
+  associate_admin: { decideOwnTimeAway: false, manageRoles: false },
+  member:          { decideOwnTimeAway: false, manageRoles: false },
+};
+
+export function capsFor(role) {
+  return CAPS[role] || CAPS.member;
+}
+
+// ============================================================
+// ADMIN TOKEN
+// ============================================================
+// Format: <base64url(payload)>.<hmac-sha256 hex>
+//   payload = { m: memberId, r: role, d: dayNumber }
+//
+// The token carries WHO, not just "is an admin". The previous format was
+// HMAC(secret, "admin:" + day) — an identical opaque string for every
+// admin — which made per-admin rules unenforceable and, worse, logged every
+// action against ADMIN_EMAIL regardless of who performed it.
+//
+// Valid for the current day OR the previous day (24h grace). Legacy
+// single-segment tokens no longer parse; clients re-elevate automatically.
 function dayNumber(date = new Date()) {
   return Math.floor(date.getTime() / 86_400_000);
 }
 
-function tokenFor(day) {
+function signPayload(payloadB64) {
   const secret = process.env.ADMIN_TOKEN_SECRET;
   if (!secret) throw new Error('ADMIN_TOKEN_SECRET not set');
-  return crypto.createHmac('sha256', secret).update(`admin:${day}`).digest('hex');
+  return crypto.createHmac('sha256', secret).update(payloadB64).digest('hex');
 }
 
-export function mintAdminToken() {
-  return tokenFor(dayNumber());
+export function mintAdminToken({ memberId, role }) {
+  if (!memberId || !isAdminRole(role)) throw new Error('mintAdminToken: needs an admin member');
+  const payload = JSON.stringify({ m: memberId, r: role, d: dayNumber() });
+  const b64 = Buffer.from(payload, 'utf8').toString('base64url');
+  return `${b64}.${signPayload(b64)}`;
 }
 
+// Returns { memberId, role, day } on a valid signature, else null.
+// Signature-only — it does NOT confirm the member still exists or is still
+// an admin. Use resolveAdmin() for anything that acts on the result.
 export function verifyAdminToken(token) {
-  if (!token || typeof token !== 'string') return false;
-  const today = tokenFor(dayNumber());
-  const yesterday = tokenFor(dayNumber() - 1);
-  const buf = Buffer.from(token, 'hex');
-  if (buf.length !== 32) return false;
-  try {
-    if (crypto.timingSafeEqual(buf, Buffer.from(today, 'hex'))) return true;
-    if (crypto.timingSafeEqual(buf, Buffer.from(yesterday, 'hex'))) return true;
-  } catch {
-    return false;
+  if (!token || typeof token !== 'string') return null;
+  const dot = token.indexOf('.');
+  if (dot <= 0) return null;
+  const b64 = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  let expected;
+  try { expected = signPayload(b64); } catch { return null; }
+  const a = Buffer.from(sig, 'hex');
+  const b = Buffer.from(expected, 'hex');
+  if (a.length !== b.length || a.length === 0) return null;
+  try { if (!crypto.timingSafeEqual(a, b)) return null; } catch { return null; }
+
+  let claims;
+  try { claims = JSON.parse(Buffer.from(b64, 'base64url').toString('utf8')); }
+  catch { return null; }
+  const today = dayNumber();
+  if (claims?.d !== today && claims?.d !== today - 1) return null;
+  if (!claims?.m || !isAdminRole(claims?.r)) return null;
+  return { memberId: claims.m, role: claims.r, day: claims.d };
+}
+
+// Verify the token AND re-read the member from the DB, so a demotion or
+// deactivation takes effect on the next request instead of waiting out the
+// 24h token window. Returns the acting admin or null.
+export async function resolveAdmin(supa, token) {
+  const claims = verifyAdminToken(token);
+  if (!claims) return null;
+
+  let { data, error } = await supa
+    .from('team_members')
+    .select('id, name, email, role, active')
+    .eq('id', claims.memberId)
+    .maybeSingle();
+
+  // Deploy-order insurance: if the code ships before the role migration has
+  // been applied, selecting a column that doesn't exist errors and would 401
+  // every admin route — locking the owner out of their own calendar with no
+  // way back in. Fall back to the pre-role behaviour (ADMIN_EMAIL is the one
+  // full admin) until the column appears. Remove once the migration is live.
+  if (error) {
+    const retry = await supa
+      .from('team_members')
+      .select('id, name, email, active')
+      .eq('id', claims.memberId)
+      .maybeSingle();
+    if (retry.error || !retry.data) return null;
+    const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase();
+    const isOwner = adminEmail && (retry.data.email || '').toLowerCase() === adminEmail;
+    if (!isOwner) return null;
+    console.warn('[roles] role column missing — falling back to ADMIN_EMAIL. Run the migration.');
+    data = { ...retry.data, role: 'admin' };
   }
-  return false;
+
+  if (!data || !data.active || !isAdminRole(data.role)) return null;
+  return {
+    memberId: data.id,
+    name: data.name,
+    email: data.email,
+    role: data.role,
+    caps: capsFor(data.role),
+  };
 }
 
 export async function readJson(req) {
@@ -150,6 +252,9 @@ export function colorFromName(name) {
 export async function logAdminAction(supa, { actor, action, target_type = null, target_id = null, payload = null }) {
   try {
     await supa.from('admin_actions').insert({
+      // actor is the acting admin's email, resolved from the identity in
+      // their token. The ADMIN_EMAIL fallback only applies to system-
+      // initiated writes (cron), never to a human action.
       actor_email: actor || process.env.ADMIN_EMAIL || 'admin',
       action, target_type, target_id, payload,
     });

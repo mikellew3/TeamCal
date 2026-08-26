@@ -1,5 +1,5 @@
 import {
-  serviceClient, readJson, send, methodGuard, verifyAdminToken,
+  serviceClient, readJson, send, methodGuard, resolveAdmin,
   TIME_AWAY_TYPES, TYPE_LABEL,
   timeAwayConflicts, classifyConflict, effectiveTimeAwayRange,
   formatRange, logAdminAction,
@@ -15,7 +15,6 @@ import { sendPush } from './_push.js';
 export default async function handler(req, res) {
   if (!methodGuard(req, res, ['POST'])) return;
   const body = await readJson(req);
-  if (!verifyAdminToken(body?.token)) return send(res, 401, { error: 'unauthorized' });
 
   const { id, status, override, decision_note } = body || {};
   if (!id || !['pending', 'approved', 'denied'].includes(status)) {
@@ -27,6 +26,9 @@ export default async function handler(req, res) {
 
   try {
     const supa = serviceClient();
+    const actor = await resolveAdmin(supa, body?.token);
+    if (!actor) return send(res, 401, { error: 'unauthorized' });
+
     const { data: entry, error: gErr } = await supa
       .from('calendar_entries')
       .select('*, team_members(name, email)')
@@ -34,6 +36,19 @@ export default async function handler(req, res) {
       .maybeSingle();
     if (gErr) throw gErr;
     if (!entry) return send(res, 404, { error: 'not_found' });
+
+    // Separation of duties: an Associate Admin may decide anyone's time away
+    // except their own. Applies to approve, deny AND reset-to-pending — all
+    // three are decisions on your own request. Full admins are exempt.
+    if (!actor.caps.decideOwnTimeAway
+        && entry.member_id
+        && entry.member_id === actor.memberId
+        && TIME_AWAY_TYPES.includes(entry.event_type)) {
+      return send(res, 403, {
+        error: 'self_decide_forbidden',
+        detail: 'You can’t decide your own time-away request. An admin has to review it.',
+      });
+    }
 
     if (status === 'approved'
         && entry.member_id
@@ -59,7 +74,7 @@ export default async function handler(req, res) {
     const patch = {
       status,
       decided_at: status === 'pending' ? null : new Date().toISOString(),
-      decided_by: status === 'pending' ? null : 'admin',
+      decided_by: status === 'pending' ? null : (actor.name || actor.email || 'admin'),
       decision_note: status === 'pending' ? null : note,
     };
     const { data, error } = await supa
@@ -71,9 +86,12 @@ export default async function handler(req, res) {
     if (error) throw error;
 
     logAdminAction(supa, {
-      actor: null, action: `entry_${status}`,
+      actor: actor.email, action: `entry_${status}`,
       target_type: 'calendar_entry', target_id: id,
-      payload: { member_id: entry.member_id, event_type: entry.event_type, override: !!override },
+      payload: {
+        member_id: entry.member_id, event_type: entry.event_type,
+        override: !!override, actor_role: actor.role,
+      },
     });
 
     // Push to the requesting member (only Time Away has a member).

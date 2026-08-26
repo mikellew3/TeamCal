@@ -1195,6 +1195,9 @@
           <div id="detail-thread-msg" style="font-size:11px;color:var(--neg);"></div>
         </div>
       </div>
+      <div id="detail-self-note" hidden style="margin-top:14px;padding:10px 12px;background:var(--paper-warm);border:1px solid var(--line);border-radius:3px;font-size:12px;color:var(--ink-2);line-height:1.45;">
+        This is your own time away, so you can’t decide it. A full Admin will review it.
+      </div>
       <div class="modal-actions">
         <div class="left" id="detail-admin-actions" hidden>
           <button class="danger" id="btn-delete">Delete Entry</button>
@@ -1322,6 +1325,9 @@
             <option value="approved">Approved</option>
             <option value="pending">Pending</option>
           </select>
+          <div id="add-self-note" hidden style="font-size:10px;color:var(--warn);margin-top:4px;letter-spacing:0.02em;">
+            This is your own time away — it has to be saved as Pending for a full Admin to decide.
+          </div>
         </div>
         <div class="field">
           <label for="add-notes">Notes (optional)</label>
@@ -1522,6 +1528,17 @@
           <option value="0">Per Diem</option>
         </select>
       </div>
+      <div class="field" id="editmember-role-field" hidden>
+        <label for="editmember-role">Role</label>
+        <select id="editmember-role">
+          <option value="member">Member — requests time away only</option>
+          <option value="associate_admin">Associate Admin — full admin except deciding their own time away</option>
+          <option value="admin">Admin — everything</option>
+        </select>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:0.02em;">
+          Only a full Admin can change roles, and never their own.
+        </div>
+      </div>
       <div class="modal-actions">
         <button type="button" class="ghost" id="btn-editmember-cancel">Cancel</button>
         <button type="button" class="primary" id="btn-editmember-save">Save</button>
@@ -1660,6 +1677,7 @@
       entries: [],
       viewMonth: new Date(),     // 1st-of-month for the visible grid
       adminToken: sessionStorage.getItem('admin_token') || null,
+      adminRole: sessionStorage.getItem('admin_role') || null,
       detailEntry: null,
       mfaEnabled: false,
       expandedDay: null,         // YYYY-MM-DD of the day-detail drawer, or null
@@ -1768,27 +1786,10 @@
         await loadEntries();
         bindStaticHandlers();
 
-        // Auto-elevate to admin if this user is the configured ADMIN_EMAIL.
-        // Runs every init so the token can't go stale across day boundaries.
-        try {
-          const r = await fetch('/api/admin-verify', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${state.session.access_token}`,
-            },
-            body: '{}',
-          });
-          const j = await r.json().catch(() => ({}));
-          if (r.ok && j.token) {
-            state.adminToken = j.token;
-            sessionStorage.setItem('admin_token', j.token);
-          } else if (j.error) {
-            console.info('auto-admin skipped:', j.error);
-          }
-        } catch (err) {
-          console.warn('auto-admin failed:', err);
-        }
+        // Auto-elevate if this account holds an admin role. Runs every init
+        // so the token can't go stale across day boundaries, and so a role
+        // change (promotion or demotion) takes effect on the next load.
+        await tryAutoElevate();
 
         // Check whether this user has a verified MFA factor. Drives the
         // 2FA-required gate on submitting requests.
@@ -1853,7 +1854,7 @@
     async function loadMembers() {
       const { data, error } = await state.supabase
         .from('team_members')
-        .select('id, name, email, color, active, auth_user_id, fte')
+        .select('id, name, email, color, active, auth_user_id, fte, role')
         .order('name');
       if (error) throw error;
       state.members = data || [];
@@ -1911,7 +1912,12 @@
       const isAdmin = isAdminMode();
       document.getElementById('member-name').textContent = state.me.name;
       document.getElementById('today-label').textContent = todayLabel();
-      document.getElementById('admin-badge').hidden = !isAdmin;
+      const badgeEl = document.getElementById('admin-badge');
+      badgeEl.hidden = !isAdmin;
+      badgeEl.textContent = isFullAdmin() ? 'Admin' : 'Assoc Admin';
+      badgeEl.title = isFullAdmin()
+        ? 'Full admin'
+        : 'Associate Admin — everything except deciding your own time away';
       document.getElementById('btn-add-entry').hidden = !isAdmin;
       document.getElementById('admin-panel').hidden = !isAdmin;
       if (isAdmin) refreshPendingMembersBadge();
@@ -2027,6 +2033,7 @@
       addTypeEl.addEventListener('change', updateAddCmeAndStatusVisibility);
       populateTypeSelect('add-category', 'add-type');
       populateMemberSelect('add-member', true);
+      document.getElementById('add-member').addEventListener('change', syncSelfApprovalGuard);
       updateAddCmeAndStatusVisibility();
       document.getElementById('add-form').addEventListener('submit', submitAdminCreate);
 
@@ -2090,6 +2097,28 @@
       document.getElementById('add-status-field').hidden = cat !== 'time_away';
       // Site only meaningful for coverage adds.
       document.getElementById('add-site-field').hidden = cat !== 'coverage_adds';
+      syncSelfApprovalGuard();
+    }
+
+    // An Associate Admin can file their own time away but can't land it as
+    // approved. Rather than let them submit and eat a 403, force Pending and
+    // say why. The server enforces this regardless (self_approve_forbidden).
+    function syncSelfApprovalGuard() {
+      const statusSel = document.getElementById('add-status');
+      const approvedOpt = statusSel?.querySelector('option[value="approved"]');
+      const note = document.getElementById('add-self-note');
+      if (!statusSel || !approvedOpt || !note) return;
+
+      const cat = document.getElementById('add-category').value;
+      const memberId = document.getElementById('add-member').value || null;
+      const blocked = !isFullAdmin()
+                   && cat === 'time_away'
+                   && !!memberId
+                   && memberId === state.me?.id;
+
+      approvedOpt.disabled = blocked;
+      note.hidden = !blocked;
+      if (blocked) statusSel.value = 'pending';
     }
     function updateEditCmeAndStatusVisibility() {
       const t = document.getElementById('edit-type').value;
@@ -2114,6 +2143,19 @@
     }
 
     function isAdminMode() { return !!state.adminToken; }
+    // Full Admin vs Associate Admin. The server is the enforcer for every
+    // rule below — these only keep the UI honest so nobody is offered a
+    // button that would 403. Treat an unknown role as the restricted one.
+    function adminRole()      { return state.adminRole || 'admin'; }
+    function isFullAdmin()    { return isAdminMode() && adminRole() === 'admin'; }
+    function canManageRoles() { return isFullAdmin(); }
+    // May this admin put THIS entry into an approved state?
+    function canDecideEntry(entry) {
+      if (!isAdminMode() || !entry) return false;
+      if (isFullAdmin()) return true;
+      const isTimeAway = (TYPE_META[entry.event_type] || {}).category === 'time_away';
+      return !(isTimeAway && entry.member_id && entry.member_id === state.me?.id);
+    }
 
     function todayLabel() {
       return new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
@@ -3545,10 +3587,17 @@
       document.getElementById('detail-admin-actions').hidden = !isAdmin;
       document.getElementById('btn-detail-edit').hidden = !isAdmin;
       // Events / Coverage: NO approve / deny / reset — just edit + delete.
-      const showStatusActions = isAdmin && isTimeAway;
+      // Separation of duties: an Associate Admin gets no decision buttons on
+      // their OWN time away. The server enforces this too (admin-decide
+      // returns 403 self_decide_forbidden) — hiding them just avoids
+      // offering a button that can't work.
+      const canDecide = canDecideEntry(entry);
+      const showStatusActions = isAdmin && isTimeAway && canDecide;
       document.getElementById('btn-detail-approve').hidden = !(showStatusActions && entry.status !== 'approved');
       document.getElementById('btn-detail-deny').hidden    = !(showStatusActions && entry.status !== 'denied');
       document.getElementById('btn-detail-reset').hidden   = !(showStatusActions && entry.status !== 'pending');
+      const selfNote = document.getElementById('detail-self-note');
+      if (selfNote) selfNote.hidden = !(isAdmin && isTimeAway && !canDecide);
 
       // Self-withdraw: owner (non-admin) can cancel their own PTO / CME /
       // General entries when start_date is more than 14 days out. Closer
@@ -3907,7 +3956,10 @@
       try {
         const r = await fetch('/api/admin-verify', {
           method:'POST',
-          headers:{ 'Content-Type':'application/json' },
+          headers:{
+            'Content-Type':'application/json',
+            'Authorization': `Bearer ${state.session.access_token}`,
+          },
           body: JSON.stringify({ password }),
         });
         const j = await r.json();
@@ -3917,7 +3969,9 @@
           return;
         }
         state.adminToken = j.token;
+        state.adminRole  = j.role || 'admin';
         sessionStorage.setItem('admin_token', j.token);
+        sessionStorage.setItem('admin_role', state.adminRole);
         closeModal('adminlogin-backdrop');
         refreshAdminUi();
         renderAll();
@@ -3931,7 +3985,9 @@
 
     function endAdminSession() {
       state.adminToken = null;
+      state.adminRole = null;
       sessionStorage.removeItem('admin_token');
+      sessionStorage.removeItem('admin_role');
       refreshAdminUi();
       renderAll();
       toast('Admin session ended.', 'success');
@@ -3990,6 +4046,10 @@
         });
         const j = await r.json();
         if (r.status === 401) { adminTokenExpired(); return; }
+        if (r.status === 403) {
+          toast(j.detail || 'You’re not allowed to do that.', 'error');
+          return;
+        }
         if (r.status === 409 && j.override_available) {
           const items = (j.blocked_days || []).map(b => `<li>${formatDayShort(b.day)} — ${escapeHtml((b.names || []).join(', '))}</li>`).join('');
           const chainNote = j.chained && j.effective_range
@@ -4270,12 +4330,46 @@
       }
     }
 
-    function adminTokenExpired() {
+    // Called after any admin endpoint returns 401. Before dropping the
+    // session, try a silent re-elevate off the Supabase JWT — that covers the
+    // ordinary 24h token rollover and the one-time reissue after the token
+    // format changed, so an admin isn't bounced to the password prompt for
+    // something the app can fix itself. The failed request is NOT retried;
+    // the caller already returned, so we just tell them to repeat it.
+    async function adminTokenExpired() {
       state.adminToken = null;
+      state.adminRole = null;
       sessionStorage.removeItem('admin_token');
+      sessionStorage.removeItem('admin_role');
+      const renewed = await tryAutoElevate();
       refreshAdminUi();
       renderAll();
-      toast('Admin session expired. Sign in again.', 'error');
+      toast(renewed
+        ? 'Admin session refreshed — try that again.'
+        : 'Admin session expired. Sign in again.', renewed ? 'success' : 'error');
+    }
+
+    // Mint an admin token from the current sign-in. Succeeds only if this
+    // account holds an admin role server-side. Returns true on success.
+    async function tryAutoElevate() {
+      if (!state.session?.access_token) return false;
+      try {
+        const r = await fetch('/api/admin-verify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.session.access_token}`,
+          },
+          body: '{}',
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.token) return false;
+        state.adminToken = j.token;
+        state.adminRole  = j.role || 'admin';
+        sessionStorage.setItem('admin_token', j.token);
+        sessionStorage.setItem('admin_role', state.adminRole);
+        return true;
+      } catch { return false; }
     }
 
     /* ============================================================
@@ -4644,6 +4738,11 @@
         : fte === 0.5
         ? '<span class="badge fte-half" style="background:#f4ecdc;color:#7a4e2d;">0.5 FTE</span>'
         : '';
+      const roleBadge = m.role === 'admin'
+        ? '<span class="badge role-admin" style="background:#dfeceb;color:#1f6b6b;">Admin</span>'
+        : m.role === 'associate_admin'
+        ? '<span class="badge role-assoc" style="background:#e8e4f0;color:#4a4a7a;">Assoc Admin</span>'
+        : '';
       const actions = kind === 'pending'
         ? `<button data-act="approve" data-id="${m.id}" class="primary">Approve</button>
            <button data-act="deny"    data-id="${m.id}" class="danger">Deny</button>
@@ -4659,7 +4758,7 @@
         <div class="who">
           <span class="dot" style="background:${escapeHtml(m.color || '#888')}"></span>
           <div class="meta">
-            <div class="name">${escapeHtml(m.name)}${badge}${fteBadge}</div>
+            <div class="name">${escapeHtml(m.name)}${badge}${roleBadge}${fteBadge}</div>
             <div class="email">${escapeHtml(m.email)}</div>
           </div>
         </div>
@@ -4676,6 +4775,12 @@
         document.getElementById('editmember-email').value = member.email || '';
         document.getElementById('editmember-color').value = member.color || '';
         document.getElementById('editmember-fte').value = String(member.fte ?? 1);
+        // Role is editable only by a full Admin, and never on yourself —
+        // self-promotion would void the separation-of-duties rule.
+        const roleField = document.getElementById('editmember-role-field');
+        const roleSel   = document.getElementById('editmember-role');
+        roleSel.value = member.role || 'member';
+        roleField.hidden = !(canManageRoles() && member.id !== state.me?.id);
         document.getElementById('editmember-msg').textContent = '';
         openModal('editmember-backdrop');
         return;
@@ -4736,14 +4841,20 @@
         msg.textContent = 'Color must be 6-digit hex like #1f6b6b';
         return;
       }
+      const payload = { token: state.adminToken, action: 'update', id, name, email, color, fte };
+      // Only send role when the field was actually offered — otherwise the
+      // server rejects the whole update with role_change_forbidden.
+      if (!document.getElementById('editmember-role-field').hidden) {
+        payload.role = document.getElementById('editmember-role').value;
+      }
       try {
         const r = await fetch('/api/admin-member-action', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: state.adminToken, action: 'update', id, name, email, color, fte }),
+          body: JSON.stringify(payload),
         });
         const j = await r.json().catch(() => ({}));
         if (r.status === 401) { adminTokenExpired(); return; }
-        if (!r.ok) { msg.textContent = j.error || 'Update failed.'; return; }
+        if (!r.ok) { msg.textContent = j.detail || j.error || 'Update failed.'; return; }
         toast('Member updated.', 'success');
         closeModal('editmember-backdrop');
         await loadMembersList();

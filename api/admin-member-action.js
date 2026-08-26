@@ -1,4 +1,4 @@
-import { serviceClient, readJson, send, methodGuard, verifyAdminToken, nextAvailableColor, logAdminAction } from './_lib.js';
+import { serviceClient, readJson, send, methodGuard, resolveAdmin, nextAvailableColor, logAdminAction, ROLES, isAdminRole } from './_lib.js';
 
 // POST { token, action, ...args } — single endpoint for all member-mgmt:
 //   action: 'create'      args: { name, email, color, password }
@@ -12,22 +12,24 @@ import { serviceClient, readJson, send, methodGuard, verifyAdminToken, nextAvail
 export default async function handler(req, res) {
   if (!methodGuard(req, res, ['POST'])) return;
   const body = await readJson(req);
-  if (!verifyAdminToken(body?.token)) return send(res, 401, { error: 'unauthorized' });
 
   const action = body?.action;
   if (!action) return send(res, 400, { error: 'missing_action' });
 
   try {
     const supa = serviceClient();
+    const actor = await resolveAdmin(supa, body?.token);
+    if (!actor) return send(res, 401, { error: 'unauthorized' });
+
     switch (action) {
-      case 'create':         return await create(supa, body, res);
-      case 'approve':        return await approve(supa, body, res);
-      case 'deny':           return await deny(supa, body, res);
-      case 'deactivate':     return await setActive(supa, body, res, false);
-      case 'reactivate':     return await setActive(supa, body, res, true);
-      case 'update':         return await update(supa, body, res);
-      case 'reset_password': return await resetPassword(supa, body, res);
-      case 'delete':         return await hardDelete(supa, body, res);
+      case 'create':         return await create(supa, body, res, actor);
+      case 'approve':        return await approve(supa, body, res, actor);
+      case 'deny':           return await deny(supa, body, res, actor);
+      case 'deactivate':     return await setActive(supa, body, res, false, actor);
+      case 'reactivate':     return await setActive(supa, body, res, true, actor);
+      case 'update':         return await update(supa, body, res, actor);
+      case 'reset_password': return await resetPassword(supa, body, res, actor);
+      case 'delete':         return await hardDelete(supa, body, res, actor);
       default:               return send(res, 400, { error: 'unknown_action' });
     }
   } catch (err) {
@@ -36,7 +38,7 @@ export default async function handler(req, res) {
   }
 }
 
-async function create(supa, body, res) {
+async function create(supa, body, res, actor) {
   const name = (body?.name || '').trim();
   const email = (body?.email || '').trim().toLowerCase();
   const color = body?.color || await nextAvailableColor(supa, name);
@@ -58,6 +60,7 @@ async function create(supa, body, res) {
   }
 
   const fte = normalizeFte(body?.fte);
+  const role = (actor.caps.manageRoles && ROLES.includes(body?.role)) ? body.role : 'member';
   const { data: row, error: tmErr } = await supa.from('team_members').insert({
     auth_user_id: created.user.id,
     name, email, color,
@@ -65,27 +68,28 @@ async function create(supa, body, res) {
     signup_pending: false,
     must_change_password: true,
     fte,
+    role,
   }).select('*').single();
   if (tmErr) {
     await supa.auth.admin.deleteUser(created.user.id).catch(() => {});
     throw tmErr;
   }
-  logAdminAction(supa, { actor: null, action: 'member_create', target_type: 'team_member', target_id: row.id, payload: { email: row.email, name: row.name } });
+  logAdminAction(supa, { actor: actor.email, action: 'member_create', target_type: 'team_member', target_id: row.id, payload: { email: row.email, name: row.name, role: row.role } });
   return send(res, 200, { member: row });
 }
 
-async function approve(supa, body, res) {
+async function approve(supa, body, res, actor) {
   const { id } = body || {};
   if (!id) return send(res, 400, { error: 'missing_id' });
   const { data, error } = await supa.from('team_members')
     .update({ active: true, signup_pending: false })
     .eq('id', id).select('*').single();
   if (error) throw error;
-  logAdminAction(supa, { actor: null, action: 'member_approve', target_type: 'team_member', target_id: id, payload: { email: data?.email } });
+  logAdminAction(supa, { actor: actor.email, action: 'member_approve', target_type: 'team_member', target_id: id, payload: { email: data?.email } });
   return send(res, 200, { member: data });
 }
 
-async function deny(supa, body, res) {
+async function deny(supa, body, res, actor) {
   const { id } = body || {};
   if (!id) return send(res, 400, { error: 'missing_id' });
   const { data: row } = await supa.from('team_members')
@@ -97,22 +101,26 @@ async function deny(supa, body, res) {
   }
   const { error } = await supa.from('team_members').delete().eq('id', id);
   if (error) throw error;
-  logAdminAction(supa, { actor: null, action: 'member_deny', target_type: 'team_member', target_id: id, payload: { auth_user_id: row.auth_user_id } });
+  logAdminAction(supa, { actor: actor.email, action: 'member_deny', target_type: 'team_member', target_id: id, payload: { auth_user_id: row.auth_user_id } });
   return send(res, 200, { ok: true });
 }
 
-async function setActive(supa, body, res, value) {
+async function setActive(supa, body, res, value, actor) {
   const { id } = body || {};
   if (!id) return send(res, 400, { error: 'missing_id' });
+  if (!value) {
+    const blocked = await lastAdminGuard(supa, id, { verb: 'deactivate' });
+    if (blocked) return send(res, 409, blocked);
+  }
   const { data, error } = await supa.from('team_members')
     .update({ active: value, signup_pending: false })
     .eq('id', id).select('*').single();
   if (error) throw error;
-  logAdminAction(supa, { actor: null, action: value ? 'member_reactivate' : 'member_deactivate', target_type: 'team_member', target_id: id, payload: { email: data?.email } });
+  logAdminAction(supa, { actor: actor.email, action: value ? 'member_reactivate' : 'member_deactivate', target_type: 'team_member', target_id: id, payload: { email: data?.email } });
   return send(res, 200, { member: data });
 }
 
-async function update(supa, body, res) {
+async function update(supa, body, res, actor) {
   const { id } = body || {};
   if (!id) return send(res, 400, { error: 'missing_id' });
   const patch = {};
@@ -120,6 +128,31 @@ async function update(supa, body, res) {
   if (typeof body.email === 'string' && body.email.includes('@')) patch.email = body.email.trim().toLowerCase();
   if (typeof body.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.color)) patch.color = body.color;
   if ('fte' in body) patch.fte = normalizeFte(body.fte);
+
+  // Role changes are full-admin only. Without this an Associate Admin could
+  // promote themselves to 'admin' and the self-approval rule would evaporate
+  // in one click — so this gate is load-bearing, not cosmetic.
+  if ('role' in body) {
+    if (!actor.caps.manageRoles) {
+      return send(res, 403, {
+        error: 'role_change_forbidden',
+        detail: 'Only a full Admin can change roles.',
+      });
+    }
+    if (!ROLES.includes(body.role)) return send(res, 400, { error: 'invalid_role' });
+    if (id === actor.memberId) {
+      return send(res, 403, {
+        error: 'self_role_change_forbidden',
+        detail: 'You can’t change your own role. Ask another admin.',
+      });
+    }
+    if (body.role !== 'admin') {
+      const blocked = await lastAdminGuard(supa, id, { verb: 'demote' });
+      if (blocked) return send(res, 409, blocked);
+    }
+    patch.role = body.role;
+  }
+
   if (Object.keys(patch).length === 0) return send(res, 400, { error: 'nothing_to_update' });
 
   // If email is changing, also update the auth user.
@@ -133,11 +166,11 @@ async function update(supa, body, res) {
 
   const { data, error } = await supa.from('team_members').update(patch).eq('id', id).select('*').single();
   if (error) throw error;
-  logAdminAction(supa, { actor: null, action: 'member_update', target_type: 'team_member', target_id: id, payload: { fields: Object.keys(patch) } });
+  logAdminAction(supa, { actor: actor.email, action: 'member_update', target_type: 'team_member', target_id: id, payload: { fields: Object.keys(patch), role: patch.role ?? undefined } });
   return send(res, 200, { member: data });
 }
 
-async function resetPassword(supa, body, res) {
+async function resetPassword(supa, body, res, actor) {
   const { id, password } = body || {};
   if (!id) return send(res, 400, { error: 'missing_id' });
   if (!password || password.length < 8) return send(res, 400, { error: 'invalid_password' });
@@ -147,13 +180,15 @@ async function resetPassword(supa, body, res) {
   if (error) throw error;
   // Force the member to pick their own password on next sign-in.
   await supa.from('team_members').update({ must_change_password: true }).eq('id', id);
-  logAdminAction(supa, { actor: null, action: 'member_reset_password', target_type: 'team_member', target_id: id });
+  logAdminAction(supa, { actor: actor.email, action: 'member_reset_password', target_type: 'team_member', target_id: id });
   return send(res, 200, { ok: true });
 }
 
-async function hardDelete(supa, body, res) {
+async function hardDelete(supa, body, res, actor) {
   const { id } = body || {};
   if (!id) return send(res, 400, { error: 'missing_id' });
+  const blocked = await lastAdminGuard(supa, id, { verb: 'delete' });
+  if (blocked) return send(res, 409, blocked);
   const { data: row } = await supa.from('team_members').select('auth_user_id').eq('id', id).maybeSingle();
   if (!row) return send(res, 404, { error: 'not_found' });
   if (row.auth_user_id) {
@@ -161,8 +196,27 @@ async function hardDelete(supa, body, res) {
   }
   const { error } = await supa.from('team_members').delete().eq('id', id);
   if (error) throw error;
-  logAdminAction(supa, { actor: null, action: 'member_delete', target_type: 'team_member', target_id: id, payload: { auth_user_id: row.auth_user_id } });
+  logAdminAction(supa, { actor: actor.email, action: 'member_delete', target_type: 'team_member', target_id: id, payload: { auth_user_id: row.auth_user_id } });
   return send(res, 200, { ok: true });
+}
+
+// Refuse to remove the last full Admin — demoting, deactivating, or deleting
+// them would leave nobody who can approve their own time away, change roles,
+// or restore access. Returns an error body to send, or null if it's safe.
+async function lastAdminGuard(supa, id, { verb }) {
+  const { data: target } = await supa
+    .from('team_members').select('id, role, active').eq('id', id).maybeSingle();
+  if (!target || target.role !== 'admin') return null;
+  const { count } = await supa
+    .from('team_members')
+    .select('id', { count: 'exact', head: true })
+    .eq('role', 'admin')
+    .eq('active', true);
+  if ((count ?? 0) > 1) return null;
+  return {
+    error: 'last_admin',
+    detail: `This is the only active Admin — promote someone else before you ${verb} them.`,
+  };
 }
 
 // FTE: 1.0 full-time, 0.5 half-time, 0 per diem. Anything else falls back to 1.0.

@@ -43,6 +43,29 @@ alter table team_members add column if not exists signup_pending boolean not nul
 -- a temporary password; cleared after the member sets their own.
 alter table team_members add column if not exists must_change_password boolean not null default false;
 
+-- Role. Drives admin elevation and the separation-of-duties rules.
+--   member           — normal PA. Requests time away, no admin surface.
+--   associate_admin  — full admin EXCEPT: may not put their own time away
+--                      into an approved state (by decide, create, or edit),
+--                      and may not change anyone's role (including their
+--                      own — otherwise self-promotion voids the rule).
+--   admin            — everything.
+alter table team_members add column if not exists role text not null default 'member';
+alter table team_members drop constraint if exists team_members_role_check;
+alter table team_members add constraint team_members_role_check
+  check (role in ('member', 'associate_admin', 'admin'));
+create index if not exists team_members_role_idx on team_members (role);
+
+-- Bootstrap: promote the owner to full admin. Safe to re-run; matches
+-- nothing (and does nothing) if the address is wrong, so edit it to match
+-- your ADMIN_EMAIL. This is only a convenience — api/admin-verify.js also
+-- self-heals: the account whose email equals ADMIN_EMAIL gets role='admin'
+-- written on its next sign-in, so you cannot lock yourself out by skipping
+-- or mis-typing this line.
+update team_members set role = 'admin'
+ where lower(email) = lower('mllewellyn1@mgh.harvard.edu')
+   and role <> 'admin';
+
 -- RPC for a signed-in member to clear their own must_change_password flag
 -- after updating their password via supabase.auth.updateUser.
 create or replace function clear_must_change_password()

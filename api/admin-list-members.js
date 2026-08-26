@@ -1,4 +1,4 @@
-import { serviceClient, readJson, send, methodGuard, verifyAdminToken } from './_lib.js';
+import { serviceClient, readJson, send, methodGuard, resolveAdmin } from './_lib.js';
 
 // POST { token } → { members: [...] } including pending and inactive
 // POST { token, kind: 'actions', limit? } → { actions: [...] } newest first,
@@ -6,10 +6,11 @@ import { serviceClient, readJson, send, methodGuard, verifyAdminToken } from './
 export default async function handler(req, res) {
   if (!methodGuard(req, res, ['POST'])) return;
   const body = await readJson(req);
-  if (!verifyAdminToken(body?.token)) return send(res, 401, { error: 'unauthorized' });
 
   try {
     const supa = serviceClient();
+    const actor = await resolveAdmin(supa, body?.token);
+    if (!actor) return send(res, 401, { error: 'unauthorized' });
 
     if (body?.kind === 'actions') {
       const requested = parseInt(body?.limit ?? 100, 10) || 100;
@@ -25,12 +26,12 @@ export default async function handler(req, res) {
 
     const { data, error } = await supa
       .from('team_members')
-      .select('id, name, email, color, active, signup_pending, must_change_password, auth_user_id, created_at, fte')
+      .select('id, name, email, color, active, signup_pending, must_change_password, auth_user_id, created_at, fte, role')
       .order('signup_pending', { ascending: false })
       .order('active', { ascending: false })
       .order('name', { ascending: true });
     if (error) throw error;
-    return send(res, 200, { members: data || [] });
+    return send(res, 200, { members: data || [], viewer: { member_id: actor.memberId, role: actor.role } });
   } catch (err) {
     console.error('admin-list-members', err);
     return send(res, 500, { error: 'server_error', detail: String(err?.message || err) });

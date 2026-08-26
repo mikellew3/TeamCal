@@ -1,5 +1,5 @@
 import {
-  serviceClient, readJson, send, methodGuard, verifyAdminToken,
+  serviceClient, readJson, send, methodGuard, resolveAdmin,
   TYPE_LABEL, formatRange, logAdminAction,
 } from './_lib.js';
 import { sendPush } from './_push.js';
@@ -28,8 +28,10 @@ export default async function handler(req, res) {
   try { supa = serviceClient(); }
   catch (e) { console.error(e); return send(res, 500, { error: 'server_error' }); }
 
-  // Resolve caller
-  const isAdmin = verifyAdminToken(body?.admin_token);
+  // Resolve caller. An admin token now carries identity, so admin-authored
+  // messages are attributed to the actual admin rather than a generic 'Admin'.
+  const adminActor = await resolveAdmin(supa, body?.admin_token);
+  const isAdmin = !!adminActor;
   let callerMemberId = null;
   let callerName = null;
   if (!isAdmin) {
@@ -70,7 +72,7 @@ export default async function handler(req, res) {
 
     if (kind === 'list')      return await listMessages(supa, entryId, res);
     if (kind === 'mark_read') return await markRead(supa, { entryId, isAdmin }, res);
-    if (kind === 'post')      return await postMessage(supa, { entry, body: body?.body, isAdmin, callerMemberId, callerName }, res);
+    if (kind === 'post')      return await postMessage(supa, { entry, body: body?.body, isAdmin, callerMemberId, callerName: callerName || adminActor?.name }, res);
   } catch (err) {
     console.error('entry-messages', err);
     return send(res, 500, { error: 'server_error', detail: String(err?.message || err) });
@@ -231,7 +233,7 @@ async function postMessage(supa, { entry, body, isAdmin, callerMemberId, callerN
       recipientType: 'member',
       memberId: entry.member_id,
       payload: {
-        title: `Admin replied — ${typeLabel} ${range}`,
+        title: `${callerName || 'Admin'} replied — ${typeLabel} ${range}`,
         body: preview,
         tag: `msg-${entry.id}`,
         entryId: entry.id,
@@ -255,7 +257,7 @@ async function postMessage(supa, { entry, body, isAdmin, callerMemberId, callerN
 
   if (isAdmin) {
     logAdminAction(supa, {
-      actor: null, action: 'entry_message',
+      actor: adminActor.email, action: 'entry_message',
       target_type: 'calendar_entry', target_id: entry.id,
       payload: { length: text.length },
     });
