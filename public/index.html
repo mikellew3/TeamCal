@@ -1851,6 +1851,24 @@
     /* ============================================================
      * DATA
      * ============================================================ */
+    // Supabase access tokens expire (~1h) and supabase-js refreshes them on
+    // its own schedule — but state.session is a snapshot taken once at init,
+    // so an hour later it holds a dead token. getSession() hands back the
+    // live, auto-refreshed session. Always go through this; never read
+    // state.session.access_token directly.
+    async function freshJwt() {
+      try {
+        const { data } = await state.supabase.auth.getSession();
+        if (data?.session) {
+          state.session = data.session;
+          return data.session.access_token;
+        }
+      } catch (err) {
+        console.warn('freshJwt', err);
+      }
+      return state.session?.access_token || null;
+    }
+
     async function loadMembers() {
       const { data, error } = await state.supabase
         .from('team_members')
@@ -3464,7 +3482,7 @@
         conference_link: eventType === 'cme' ? conf : null,
       };
       try {
-        const jwt = state.session?.access_token;
+        const jwt = await freshJwt();
         const r = await fetch('/api/submit-request', {
           method: 'POST',
           headers: {
@@ -3696,7 +3714,7 @@
       const payload = { kind: 'list', entry_id: entryId };
       const headers = { 'Content-Type': 'application/json' };
       if (isAdminMode()) payload.admin_token = state.adminToken;
-      else headers['Authorization'] = `Bearer ${state.session.access_token}`;
+      else headers['Authorization'] = `Bearer ${await freshJwt()}`;
 
       try {
         const r = await fetch('/api/entry-messages', { method: 'POST', headers, body: JSON.stringify(payload) });
@@ -3753,7 +3771,7 @@
       const payload = { kind: 'mark_read', entry_id: entryId };
       const headers = { 'Content-Type': 'application/json' };
       if (isAdminMode()) payload.admin_token = state.adminToken;
-      else headers['Authorization'] = `Bearer ${state.session.access_token}`;
+      else headers['Authorization'] = `Bearer ${await freshJwt()}`;
       try {
         await fetch('/api/entry-messages', { method: 'POST', headers, body: JSON.stringify(payload) });
       } catch (err) { console.warn('mark_read', err); }
@@ -3763,7 +3781,7 @@
       const payload = { kind: 'unread_count' };
       const headers = { 'Content-Type': 'application/json' };
       if (isAdminMode()) payload.admin_token = state.adminToken;
-      else headers['Authorization'] = `Bearer ${state.session.access_token}`;
+      else headers['Authorization'] = `Bearer ${await freshJwt()}`;
       try {
         const r = await fetch('/api/entry-messages', { method: 'POST', headers, body: JSON.stringify(payload) });
         if (!r.ok) return 0;
@@ -3783,7 +3801,7 @@
       const payload = { kind: 'post', entry_id: entryId, body: text };
       const headers = { 'Content-Type': 'application/json' };
       if (isAdminMode()) payload.admin_token = state.adminToken;
-      else headers['Authorization'] = `Bearer ${state.session.access_token}`;
+      else headers['Authorization'] = `Bearer ${await freshJwt()}`;
       try {
         const r = await fetch('/api/entry-messages', { method: 'POST', headers, body: JSON.stringify(payload) });
         const j = await r.json().catch(() => ({}));
@@ -3981,17 +3999,34 @@
       const btn = document.getElementById('btn-adminlogin-submit');
       btn.disabled = true;
       try {
+        const jwt = await freshJwt();
+        if (!jwt) {
+          msg.textContent = 'Your sign-in expired. Reload the page and try again.';
+          btn.disabled = false;
+          return;
+        }
         const r = await fetch('/api/admin-verify', {
           method:'POST',
           headers:{
             'Content-Type':'application/json',
-            'Authorization': `Bearer ${state.session.access_token}`,
+            'Authorization': `Bearer ${jwt}`,
           },
           body: JSON.stringify({ password }),
         });
         const j = await r.json();
         if (!r.ok) {
-          msg.textContent = j.error === 'invalid_password' ? 'Wrong password.' : (j.error || 'Could not sign in.');
+          // Map the server's codes to something actionable — a raw
+          // 'invalid_token' tells the reader nothing about what to do.
+          const REASONS = {
+            invalid_password:  'Wrong password.',
+            invalid_token:     'Your sign-in expired. Reload the page and try again.',
+            sign_in_required:  'Sign in to the calendar first, then try again.',
+            not_admin_user:    'This account doesn’t have admin access.',
+            not_a_team_member: 'This account isn’t on the team roster.',
+            inactive_member:   'This account is deactivated.',
+            not_configured:    'Admin sign-in isn’t configured on the server.',
+          };
+          msg.textContent = REASONS[j.error] || j.detail || j.error || 'Could not sign in.';
           btn.disabled = false;
           return;
         }
@@ -4032,7 +4067,7 @@
         danger: true,
         onConfirm: async () => {
           try {
-            const jwt = state.session?.access_token;
+            const jwt = await freshJwt();
             const r = await fetch('/api/submit-request', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
@@ -4380,13 +4415,14 @@
     // Mint an admin token from the current sign-in. Succeeds only if this
     // account holds an admin role server-side. Returns true on success.
     async function tryAutoElevate() {
-      if (!state.session?.access_token) return false;
+      const jwt = await freshJwt();
+      if (!jwt) return false;
       try {
         const r = await fetch('/api/admin-verify', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${state.session.access_token}`,
+            'Authorization': `Bearer ${jwt}`,
           },
           body: '{}',
         });
@@ -4643,7 +4679,7 @@
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${state.session.access_token}`,
+              'Authorization': `Bearer ${await freshJwt()}`,
             },
             body: JSON.stringify({ scope: 'member', subscription: sub.toJSON() }),
           });
@@ -4668,7 +4704,7 @@
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${state.session.access_token}`,
+                'Authorization': `Bearer ${await freshJwt()}`,
               },
               body: JSON.stringify({ unsubscribe: true, endpoint: existing.endpoint }),
             }).catch(() => {});
