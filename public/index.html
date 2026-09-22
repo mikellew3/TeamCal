@@ -3734,8 +3734,9 @@
           document.getElementById('detail-removal-text').textContent = isAdmin
             ? `${who} asked to cancel this.`
             : 'You asked to cancel this. Admin will review it.';
-          document.getElementById('detail-removal-reason').textContent =
-            entry.removal_reason ? `"${entry.removal_reason}"` : '';
+          const reasonEl = document.getElementById('detail-removal-reason');
+          reasonEl.textContent = entry.removal_reason ? `"${entry.removal_reason}"` : '';
+          reasonEl.hidden = !entry.removal_reason;
           document.getElementById('detail-removal-when').textContent =
             formatTimestamp(entry.removal_requested_at);
         }
@@ -4191,21 +4192,14 @@
         sub: 'It stays on the calendar until Admin decides, so coverage isn’t affected in the meantime.',
         bodyHtml: `
           <div class="field" style="margin-bottom:0;">
-            <label for="removal-reason-input">Why? (required — Admin sees this)</label>
+            <label for="removal-reason-input">Note for Admin (optional)</label>
             <textarea id="removal-reason-input" maxlength="500" rows="3"
-              placeholder="e.g. 'Conference moved to October' or 'Covering for Dan that week'"></textarea>
+              placeholder="e.g. 'Conference moved to October' — leave blank if there's nothing to add"></textarea>
           </div>`,
         confirmText: 'Send Request',
         danger: false,
         onConfirm: async () => {
           const reason = (document.getElementById('removal-reason-input')?.value || '').trim();
-          // openConfirm closes before it runs us, so an empty reason would
-          // otherwise drop them out of the dialog entirely. Re-open it.
-          if (!reason) {
-            toast('A reason is required.', 'error');
-            requestOwnRemoval();
-            return;
-          }
           await memberEntryAction('request_removal', entry.id, { reason },
             'Removal requested — Admin will review it.');
         },

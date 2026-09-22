@@ -65,9 +65,10 @@ export default async function handler(req, res) {
 
   const body = await readJson(req);
 
-  // Member self-withdraw path: cancel your own PTO/CME/General entries so
-  // long as they start more than 2 weeks out. Anything closer must route
-  // through admin (coverage may already be planned around it).
+  // Member-initiated actions on their own PTO / CME / General entries.
+  //   withdraw        — retract an undecided request; deletes it.
+  //   request_removal — ask Admin to cancel APPROVED time away; flags it.
+  //   cancel_removal  — call off that ask before Admin decides.
   if (body?.action === 'withdraw')        return handleWithdraw(supa, member, body, res);
   if (body?.action === 'request_removal') return handleRequestRemoval(supa, member, body, res);
   if (body?.action === 'cancel_removal')  return handleCancelRemoval(supa, member, body, res);
@@ -294,14 +295,16 @@ async function handleRequestRemoval(supa, member, body, res) {
   if (entry.removal_requested_at) {
     return send(res, 409, { error: 'already_requested', detail: 'You already asked to remove this. Admin will review it.' });
   }
+  // Optional. The notification and the queue entry are what give Admin
+  // visibility; making people justify themselves just breeds "n/a".
   const reason = (typeof body?.reason === 'string') ? body.reason.trim() : '';
-  if (!reason) {
-    return send(res, 400, { error: 'reason_required', detail: 'Add a short reason so Admin knows why.' });
-  }
 
   const { data, error } = await supa
     .from('calendar_entries')
-    .update({ removal_requested_at: new Date().toISOString(), removal_reason: reason.slice(0, 500) })
+    .update({
+      removal_requested_at: new Date().toISOString(),
+      removal_reason: reason ? reason.slice(0, 500) : null,
+    })
     .eq('id', entry.id)
     .select('*')
     .single();
@@ -315,7 +318,9 @@ async function handleRequestRemoval(supa, member, body, res) {
     recipientType: 'admin',
     payload: {
       title: `${member.name} wants to cancel ${typeLabel}`,
-      body: `${range} — "${reason.length > 80 ? reason.slice(0, 77) + '…' : reason}"`,
+      body: reason
+        ? `${range} — "${reason.length > 80 ? reason.slice(0, 77) + '…' : reason}"`
+        : `${range} — no longer needed`,
       tag: `rmreq-${entry.id}`,
       entryId: entry.id,
       url: `/index.html?entry=${entry.id}`,
