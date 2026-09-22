@@ -251,6 +251,13 @@
     .chip.cat-coverage .type-tag { color:var(--cat-coverage); }
     .chip.cat-coverage:hover { background:#dce2ee; }
 
+    .chip.removal-pending {
+      border-style:dashed;
+      opacity:0.85;
+    }
+    .chip .rm-flag {
+      margin-left:4px;font-size:10px;opacity:0.8;flex-shrink:0;
+    }
     .chip.pending {
       background-image:repeating-linear-gradient(
         135deg,transparent 0 4px,rgba(26,42,51,0.06) 4px 8px);
@@ -1195,6 +1202,11 @@
           <div id="detail-thread-msg" style="font-size:11px;color:var(--neg);"></div>
         </div>
       </div>
+      <div id="detail-removal-banner" hidden style="margin-top:14px;padding:10px 12px;background:#fdf1e3;border:1px solid #e0c9a8;border-radius:3px;font-size:12px;color:#7a4e2d;line-height:1.45;">
+        <strong id="detail-removal-text">Removal requested.</strong>
+        <div id="detail-removal-reason" style="margin-top:4px;font-style:italic;"></div>
+        <div id="detail-removal-when" style="margin-top:4px;font-size:10px;letter-spacing:0.02em;opacity:0.75;"></div>
+      </div>
       <div id="detail-self-note" hidden style="margin-top:14px;padding:10px 12px;background:var(--paper-warm);border:1px solid var(--line);border-radius:3px;font-size:12px;color:var(--ink-2);line-height:1.45;">
         This is your own time away, so you can’t decide it. A full Admin will review it.
       </div>
@@ -1205,6 +1217,10 @@
         </div>
         <button class="ghost" id="btn-detail-close">Close</button>
         <button class="danger" id="btn-detail-withdraw" hidden>Withdraw</button>
+        <button class="danger" id="btn-detail-request-removal" hidden>Request Removal</button>
+        <button class="ghost"  id="btn-detail-cancel-removal" hidden>Keep It After All</button>
+        <button class="danger" id="btn-detail-removal-deny" hidden>Keep on Calendar</button>
+        <button class="success" id="btn-detail-removal-approve" hidden>Remove It</button>
         <button class="ghost" id="btn-detail-edit" hidden>Edit</button>
         <button class="ghost" id="btn-detail-reset" hidden>Reset to Pending</button>
         <button class="danger" id="btn-detail-deny" hidden>Deny</button>
@@ -2086,6 +2102,10 @@
       document.getElementById('btn-detail-deny').onclick    = () => decideEntry('denied');
       document.getElementById('btn-detail-reset').onclick   = () => decideEntry('pending');
       document.getElementById('btn-detail-withdraw').onclick = withdrawOwnRequest;
+      document.getElementById('btn-detail-request-removal').onclick = requestOwnRemoval;
+      document.getElementById('btn-detail-cancel-removal').onclick  = cancelOwnRemoval;
+      document.getElementById('btn-detail-removal-approve').onclick = () => decideRemoval(true);
+      document.getElementById('btn-detail-removal-deny').onclick    = () => decideRemoval(false);
       document.getElementById('btn-detail-edit').onclick    = openEditFromDetail;
       document.getElementById('btn-delete').onclick         = deleteEntry;
       document.getElementById('btn-remove-day').onclick     = removeSingleDay;
@@ -2225,8 +2245,8 @@
         const unread = await fetchUnreadCount();
         let total = unread;
         if (isAdminMode()) {
-          const pending = state.entries.filter(e => e.status === 'pending').length;
-          total += pending;
+          total += state.entries.filter(e => e.status === 'pending').length;
+          total += state.entries.filter(e => e.removal_requested_at).length;
         }
         if (total > 0) navigator.setAppBadge(total).catch(() => {});
         else navigator.clearAppBadge?.().catch(() => {});
@@ -2235,7 +2255,8 @@
 
     function renderAdminPanel() {
       if (!isAdminMode()) return;
-      const pending = state.entries.filter(e => e.status === 'pending').length;
+      const pending = state.entries.filter(e => e.status === 'pending').length
+                    + state.entries.filter(e => e.removal_requested_at).length;
       document.getElementById('admin-pending-count').textContent = pending;
       // Deliberately NOT disabled at zero. A disabled button swallows the
       // click with no feedback at all, which is indistinguishable from the
@@ -2834,24 +2855,59 @@
 
     function openPendingModal() {
       if (!isAdminMode()) return;
+      // Two kinds of thing need a decision: new requests, and requests to
+      // cancel something already approved. Both belong in this queue.
       const pending = state.entries
         .filter(e => e.status === 'pending')
         .sort((a, b) => (a.requested_at || '').localeCompare(b.requested_at || ''));
+      const removals = state.entries
+        .filter(e => e.removal_requested_at)
+        .sort((a, b) => (a.removal_requested_at || '').localeCompare(b.removal_requested_at || ''));
       const sub  = document.getElementById('pending-sub');
       const list = document.getElementById('pending-list');
       list.innerHTML = '';
-      if (!pending.length) {
-        sub.textContent = 'All caught up — no pending requests.';
-        list.innerHTML = '<div class="day-overview-empty">Nothing to review.<div class="helper">New requests will appear here in the order they\'re submitted.</div></div>';
+      if (!pending.length && !removals.length) {
+        sub.textContent = 'All caught up — nothing to review.';
+        list.innerHTML = '<div class="day-overview-empty">Nothing to review.<div class="helper">New requests and cancellations appear here in the order they\'re submitted.</div></div>';
         openModal('pending-backdrop');
         return;
       }
-      sub.textContent = `${pending.length} pending — oldest first. Tap a row to approve or deny.`;
+      const bits = [];
+      if (pending.length)  bits.push(`${pending.length} pending`);
+      if (removals.length) bits.push(`${removals.length} cancellation${removals.length === 1 ? '' : 's'}`);
+      sub.textContent = `${bits.join(' · ')} — oldest first. Tap a row to decide.`;
       const fmtSubmitted = (iso) => {
         if (!iso) return '';
         const d = new Date(iso);
         return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
       };
+      for (const e of removals) {
+        const meta = TYPE_META[e.event_type] || { tag:'?', label:'?', category:'time_away' };
+        const member = e.member_id ? state.members.find(m => m.id === e.member_id) : null;
+        const range = e.start_date === e.end_date
+          ? formatDayLong(e.start_date)
+          : `${formatDayLong(e.start_date)} → ${formatDayLong(e.end_date)}`;
+        const row = document.createElement('div');
+        row.className = 'day-overview-row';
+        row.innerHTML = `
+          <div class="row-meta">
+            <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+              <span class="chip cat-time-away" style="margin:0;flex-shrink:0;background:#fdf1e3;border-color:#e0c9a8;color:#7a4e2d;">
+                ${meta.tag ? `<span class="type-tag">${meta.tag}</span>` : ''}
+                <span class="label">${escapeHtml(member?.name || 'Unknown')}</span>
+              </span>
+              <span style="font-size:12px;color:var(--warn);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                wants to cancel · ${escapeHtml(range)}
+              </span>
+            </div>
+            <span class="row-arrow">${fmtSubmitted(e.removal_requested_at)} ›</span>
+          </div>
+          ${e.removal_reason ? `<div class="note-preview">"${escapeHtml(e.removal_reason)}"</div>` : ''}
+        `;
+        row.onclick = () => { closeModal('pending-backdrop'); openDetail(e); };
+        list.appendChild(row);
+      }
+
       for (const e of pending) {
         const meta = TYPE_META[e.event_type] || { tag:'?', label:'?', category:'time_away' };
         const member = e.member_id ? state.members.find(m => m.id === e.member_id) : null;
@@ -2903,6 +2959,8 @@
       for (const e of state.entries) {
         // Pending KPI: admin sees all, members only see their own.
         if (e.status === 'pending' && (isAdmin || e.member_id === state.me.id)) pending++;
+        // A cancellation awaiting a decision is work in the queue too.
+        if (e.removal_requested_at && (isAdmin || e.member_id === state.me.id)) pending++;
         if (countsAsDayOff(e.event_type) && e.member_id === state.me.id && e.status === 'approved') {
           // Business days only — MGSA doesn't work weekends, so a Fri-Mon
           // PTO counts as 2 days off, not 4.
@@ -3313,10 +3371,15 @@
       if (entry.event_type === 'swp_off' && !/(·|-)\s*off\b/i.test(name))  name = `${name} · Off`;
       const color = member?.color || 'transparent';
 
+      // A removal request doesn't take the entry off the calendar — the day
+      // is still spoken for until Admin decides — but it shouldn't look
+      // settled either.
+      if (entry.removal_requested_at) chip.classList.add('removal-pending');
       chip.innerHTML = `
         ${meta.tag ? `<span class="type-tag">${meta.tag}</span>` : ''}
         ${member ? `<span class="dot" style="--member-color:${color}"></span>` : ''}
         <span class="label">${escapeHtml(name)}</span>
+        ${entry.removal_requested_at ? '<span class="rm-flag" title="Cancellation requested">⟲</span>' : ''}
       `;
       chip.addEventListener('click', (ev) => { ev.stopPropagation(); openDetail(entry, dayContext); });
       return chip;
@@ -3644,19 +3707,41 @@
       const selfNote = document.getElementById('detail-self-note');
       if (selfNote) selfNote.hidden = !(isAdmin && isTimeAway && !canDecide);
 
-      // Self-withdraw: owner (non-admin) can cancel their own PTO / CME /
-      // General entries when start_date is more than 14 days out. Closer
-      // than that, they have to message admin.
+      // Owner actions on their own PTO / CME / General:
+      //   pending  → Withdraw, deletes it outright (nothing is planned around
+      //              an undecided request; Admin still gets a notification)
+      //   approved → Request Removal, which flags the entry for Admin rather
+      //              than cancelling it. No date gate — the point is that
+      //              Admin sees every cancellation, near-term ones especially.
       const memberWithdrawTypes = new Set(['pto', 'cme', 'taw']);
       const isOwner = entry.member_id && state.me && entry.member_id === state.me.id;
-      const nowMs = Date.now();
-      const startMs = new Date(`${entry.start_date}T00:00:00`).getTime();
-      const daysOut = Math.floor((startMs - nowMs) / 86400000);
-      const canWithdraw = isOwner && !isAdmin
-        && memberWithdrawTypes.has(entry.event_type)
-        && entry.status !== 'denied'
-        && daysOut > 14;
-      document.getElementById('btn-detail-withdraw').hidden = !canWithdraw;
+      const ownActionable = isOwner && !isAdmin && memberWithdrawTypes.has(entry.event_type);
+      const pendingRemoval = !!entry.removal_requested_at;
+
+      document.getElementById('btn-detail-withdraw').hidden =
+        !(ownActionable && entry.status === 'pending');
+      document.getElementById('btn-detail-request-removal').hidden =
+        !(ownActionable && entry.status === 'approved' && !pendingRemoval);
+      document.getElementById('btn-detail-cancel-removal').hidden =
+        !(ownActionable && pendingRemoval);
+
+      // Removal banner — shown to the owner AND to admin, since admin decides.
+      const rmBanner = document.getElementById('detail-removal-banner');
+      if (rmBanner) {
+        rmBanner.hidden = !pendingRemoval;
+        if (pendingRemoval) {
+          const who = member ? member.name.split(' ')[0] : 'This member';
+          document.getElementById('detail-removal-text').textContent = isAdmin
+            ? `${who} asked to cancel this.`
+            : 'You asked to cancel this. Admin will review it.';
+          document.getElementById('detail-removal-reason').textContent =
+            entry.removal_reason ? `"${entry.removal_reason}"` : '';
+          document.getElementById('detail-removal-when').textContent =
+            formatTimestamp(entry.removal_requested_at);
+        }
+      }
+      document.getElementById('btn-detail-removal-approve').hidden = !(isAdmin && pendingRemoval && canDecide);
+      document.getElementById('btn-detail-removal-deny').hidden    = !(isAdmin && pendingRemoval && canDecide);
 
       // Optional admin note when deciding — only show the input while the
       // request is still pending and admin is looking.
@@ -4089,6 +4174,109 @@
             toast('Withdraw failed. Try again.', 'error');
           }
         },
+      });
+    }
+
+    // Member asks to cancel approved time away. The reason is required —
+    // it's the whole point of routing this through Admin instead of letting
+    // the entry quietly disappear.
+    async function requestOwnRemoval() {
+      const entry = state.detailEntry;
+      if (!entry) return;
+      // Deliberately not window.prompt() — iOS blocks it in standalone PWAs,
+      // which is how most of the team uses this.
+      openConfirm({
+        eyebrow: 'Cancel Time Away',
+        title: 'Ask Admin to remove this?',
+        sub: 'It stays on the calendar until Admin decides, so coverage isn’t affected in the meantime.',
+        bodyHtml: `
+          <div class="field" style="margin-bottom:0;">
+            <label for="removal-reason-input">Why? (required — Admin sees this)</label>
+            <textarea id="removal-reason-input" maxlength="500" rows="3"
+              placeholder="e.g. 'Conference moved to October' or 'Covering for Dan that week'"></textarea>
+          </div>`,
+        confirmText: 'Send Request',
+        danger: false,
+        onConfirm: async () => {
+          const reason = (document.getElementById('removal-reason-input')?.value || '').trim();
+          // openConfirm closes before it runs us, so an empty reason would
+          // otherwise drop them out of the dialog entirely. Re-open it.
+          if (!reason) {
+            toast('A reason is required.', 'error');
+            requestOwnRemoval();
+            return;
+          }
+          await memberEntryAction('request_removal', entry.id, { reason },
+            'Removal requested — Admin will review it.');
+        },
+      });
+      setTimeout(() => document.getElementById('removal-reason-input')?.focus(), 50);
+    }
+
+    async function cancelOwnRemoval() {
+      const entry = state.detailEntry;
+      if (!entry) return;
+      await memberEntryAction('cancel_removal', entry.id, {}, 'Removal request called off.');
+    }
+
+    async function memberEntryAction(action, id, extra, successMsg) {
+      try {
+        const jwt = await freshJwt();
+        const r = await fetch('/api/submit-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
+          body: JSON.stringify({ action, id, ...extra }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { toast(j.detail || j.error || 'That didn’t work.', 'error'); return; }
+        closeModal('detail-backdrop');
+        toast(successMsg, 'success');
+        await refresh();
+      } catch (err) {
+        console.error(action, err);
+        toast('That didn’t work. Try again.', 'error');
+      }
+    }
+
+    // Admin decides a removal request. Approving deletes the entry, so it
+    // gets a confirm; denying just clears the flag.
+    async function decideRemoval(approve) {
+      const entry = state.detailEntry;
+      if (!entry) return;
+      const note = (document.getElementById('detail-decide-note')?.value || '').trim();
+      const run = async () => {
+        try {
+          const r = await fetch('/api/admin-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              token: state.adminToken,
+              action: approve ? 'approve_removal' : 'deny_removal',
+              id: entry.id,
+              decision_note: note || null,
+            }),
+          });
+          const j = await r.json().catch(() => ({}));
+          if (r.status === 401) { adminTokenExpired(); return; }
+          if (r.status === 403) { toast(j.detail || 'You’re not allowed to do that.', 'error'); return; }
+          if (!r.ok) throw new Error(j.detail || j.error || 'failed');
+          closeModal('detail-backdrop');
+          toast(approve ? 'Time away removed.' : 'Removal declined — entry stands.', 'success');
+          await refresh();
+        } catch (err) {
+          console.error('decideRemoval', err);
+          toast('Action failed. Try again.', 'error');
+        }
+      };
+      if (!approve) return run();
+      openConfirm({
+        eyebrow: 'Remove',
+        title: 'Remove this time away?',
+        sub: 'The entry is deleted and the day frees up. This cannot be undone.',
+        bodyHtml: '',
+        confirmText: 'Remove It',
+        danger: true,
+        onConfirm: run,
       });
     }
 

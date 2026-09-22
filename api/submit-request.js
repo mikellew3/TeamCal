@@ -68,9 +68,9 @@ export default async function handler(req, res) {
   // Member self-withdraw path: cancel your own PTO/CME/General entries so
   // long as they start more than 2 weeks out. Anything closer must route
   // through admin (coverage may already be planned around it).
-  if (body?.action === 'withdraw') {
-    return handleWithdraw(supa, member, body, res);
-  }
+  if (body?.action === 'withdraw')        return handleWithdraw(supa, member, body, res);
+  if (body?.action === 'request_removal') return handleRequestRemoval(supa, member, body, res);
+  if (body?.action === 'cancel_removal')  return handleCancelRemoval(supa, member, body, res);
 
   const { event_type, start_date, end_date, notes, conference_link } = body || {};
 
@@ -248,45 +248,120 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
-// Types a member is allowed to withdraw themselves. Sick / FMLA / swaps
-// are admin-managed and stay off this list.
+// Types a member may act on themselves. Sick / FMLA / swaps are
+// admin-managed and stay off this list.
 const MEMBER_WITHDRAW_TYPES = ['pto', 'cme', 'taw'];
-const WITHDRAW_LEAD_DAYS = 14;
 
-async function handleWithdraw(supa, member, body, res) {
-  const { id } = body || {};
-  if (!id) return send(res, 400, { error: 'missing_id' });
-
+// Shared ownership / type checks for the three member-initiated actions.
+async function loadOwnEntry(supa, member, id, res) {
+  if (!id) { send(res, 400, { error: 'missing_id' }); return null; }
   const { data: entry, error } = await supa
     .from('calendar_entries')
-    .select('id, member_id, event_type, start_date, end_date, status')
+    .select('id, member_id, event_type, start_date, end_date, status, removal_requested_at')
     .eq('id', id)
     .maybeSingle();
-  if (error) { console.error('withdraw fetch', error); return send(res, 500, { error: 'server_error' }); }
-  if (!entry) return send(res, 404, { error: 'not_found' });
-
-  if (entry.member_id !== member.id) {
-    return send(res, 403, { error: 'not_your_entry' });
-  }
+  if (error) { console.error('own entry fetch', error); send(res, 500, { error: 'server_error' }); return null; }
+  if (!entry) { send(res, 404, { error: 'not_found' }); return null; }
+  if (entry.member_id !== member.id) { send(res, 403, { error: 'not_your_entry' }); return null; }
   if (!MEMBER_WITHDRAW_TYPES.includes(entry.event_type)) {
+    send(res, 400, { error: 'not_withdrawable', detail: 'This entry type can only be adjusted by Admin.' });
+    return null;
+  }
+  return entry;
+}
+
+// Ask to cancel APPROVED time away. Flags the entry rather than deleting it,
+// so Admin sees every cancellation and the day stays accounted for until they
+// decide. Replaces the old ">14 days out, delete it yourself" rule — that let
+// far-out cancellations happen unseen while blocking near-term ones entirely,
+// which is backwards: the near-term ones are exactly the ones Admin needs to
+// know about, and there's no risk in letting someone ASK about next week.
+async function handleRequestRemoval(supa, member, body, res) {
+  const entry = await loadOwnEntry(supa, member, body?.id, res);
+  if (!entry) return;
+
+  if (entry.status !== 'approved') {
     return send(res, 400, {
-      error: 'not_withdrawable',
-      detail: 'This entry type can only be adjusted by admin.',
+      error: 'not_approved',
+      detail: 'Only approved time away needs a removal request — withdraw it directly instead.',
     });
   }
+  if (entry.removal_requested_at) {
+    return send(res, 409, { error: 'already_requested', detail: 'You already asked to remove this. Admin will review it.' });
+  }
+  const reason = (typeof body?.reason === 'string') ? body.reason.trim() : '';
+  if (!reason) {
+    return send(res, 400, { error: 'reason_required', detail: 'Add a short reason so Admin knows why.' });
+  }
 
-  // Time gate: start_date must be strictly more than WITHDRAW_LEAD_DAYS
-  // out. Anything within the lead window has to go through admin.
-  const now = new Date();
-  const cutoff = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  cutoff.setUTCDate(cutoff.getUTCDate() + WITHDRAW_LEAD_DAYS);
-  const cutoffYmd = cutoff.toISOString().slice(0, 10);
-  if (entry.start_date <= cutoffYmd) {
+  const { data, error } = await supa
+    .from('calendar_entries')
+    .update({ removal_requested_at: new Date().toISOString(), removal_reason: reason.slice(0, 500) })
+    .eq('id', entry.id)
+    .select('*')
+    .single();
+  if (error) { console.error('request removal', error); return send(res, 500, { error: 'server_error' }); }
+
+  const typeLabel = TYPE_LABEL[entry.event_type] || entry.event_type;
+  const range = formatRange(entry.start_date, entry.end_date);
+  const { count: pendingCount } = await supa
+    .from('calendar_entries').select('id', { count: 'exact', head: true }).eq('status', 'pending');
+  sendPush({
+    recipientType: 'admin',
+    payload: {
+      title: `${member.name} wants to cancel ${typeLabel}`,
+      body: `${range} — "${reason.length > 80 ? reason.slice(0, 77) + '…' : reason}"`,
+      tag: `rmreq-${entry.id}`,
+      entryId: entry.id,
+      url: `/index.html?entry=${entry.id}`,
+      badge_count: (pendingCount ?? 0) + 1,
+    },
+  }).catch(err => console.error('push removal request', err));
+
+  return send(res, 200, { entry: data, removal_requested: true });
+}
+
+// Member changed their mind before Admin decided — clears the flag.
+async function handleCancelRemoval(supa, member, body, res) {
+  const entry = await loadOwnEntry(supa, member, body?.id, res);
+  if (!entry) return;
+  if (!entry.removal_requested_at) {
+    return send(res, 400, { error: 'no_request', detail: 'There is no removal request on this entry.' });
+  }
+  const { data, error } = await supa
+    .from('calendar_entries')
+    .update({ removal_requested_at: null, removal_reason: null })
+    .eq('id', entry.id)
+    .select('*')
+    .single();
+  if (error) { console.error('cancel removal', error); return send(res, 500, { error: 'server_error' }); }
+
+  const typeLabel = TYPE_LABEL[entry.event_type] || entry.event_type;
+  sendPush({
+    recipientType: 'admin',
+    payload: {
+      title: `${member.name} called off their cancellation`,
+      body: `${typeLabel} ${formatRange(entry.start_date, entry.end_date)} stands as approved`,
+      tag: `rmreq-${entry.id}`,
+    },
+  }).catch(err => console.error('push cancel removal', err));
+
+  return send(res, 200, { entry: data, removal_cancelled: true });
+}
+
+// Retract a request that hasn't been decided yet. Nothing has been planned
+// around a pending entry, so this still deletes outright — but Admin is
+// notified, so no cancellation happens unseen. Cancelling APPROVED time away
+// goes through handleRequestRemoval instead.
+async function handleWithdraw(supa, member, body, res) {
+  const entry = await loadOwnEntry(supa, member, body?.id, res);
+  if (!entry) return;
+  const id = entry.id;
+
+  if (entry.status === 'approved') {
     return send(res, 400, {
-      error: 'too_soon',
-      detail: `Requests can only be withdrawn on your own if they start more than ${WITHDRAW_LEAD_DAYS} days out. Message Admin for closer changes.`,
-      cutoff: cutoffYmd,
-      start_date: entry.start_date,
+      error: 'already_approved',
+      detail: 'This time away was approved — ask Admin to remove it instead.',
     });
   }
 
@@ -301,7 +376,7 @@ async function handleWithdraw(supa, member, body, res) {
     recipientType: 'admin',
     payload: {
       title: `${member.name} withdrew ${typeLabel}`,
-      body: `${range} — no longer needed`,
+      body: `${range} — pulled before it was decided`,
       tag: `withdraw-${id}`,
     },
   }).catch(err => console.error('push withdraw', err));

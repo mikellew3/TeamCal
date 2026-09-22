@@ -66,6 +66,17 @@ update team_members set role = 'admin'
  where lower(email) = lower('mllewellyn1@mgh.harvard.edu')
    and role <> 'admin';
 
+-- Removal requests. A member asking to cancel APPROVED time away doesn't
+-- delete it — it raises a flag that Admin decides on. Deliberately NOT a new
+-- `status` value: the entry stays 'approved' and keeps rendering on the
+-- calendar until the decision, so coverage is still planned around that day
+-- rather than silently freeing up while the request sits in the queue.
+alter table calendar_entries add column if not exists removal_requested_at timestamptz;
+alter table calendar_entries add column if not exists removal_reason text;
+create index if not exists calendar_entries_removal_idx
+  on calendar_entries (removal_requested_at)
+  where removal_requested_at is not null;
+
 -- RPC for a signed-in member to clear their own must_change_password flag
 -- after updating their password via supabase.auth.updateUser.
 create or replace function clear_must_change_password()

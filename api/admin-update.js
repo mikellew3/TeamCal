@@ -33,6 +33,8 @@ export default async function handler(req, res) {
       case 'update':     return await handleUpdate(supa, body, res, actor);
       case 'delete':     return await handleDelete(supa, body, res, actor);
       case 'remove_day': return await handleRemoveDay(supa, body, res, actor);
+      case 'approve_removal': return await handleRemovalDecision(supa, body, res, actor, true);
+      case 'deny_removal':    return await handleRemovalDecision(supa, body, res, actor, false);
       default:           return send(res, 400, { error: 'invalid_action' });
     }
   } catch (err) {
@@ -248,6 +250,85 @@ async function handleDelete(supa, body, res, actor) {
     }).catch(err => console.error('push delete', err));
   }
   return send(res, 200, { ok: true });
+}
+
+// Decide a member's request to cancel approved time away.
+//   approve → the entry is deleted, same as any admin delete.
+//   deny    → the flag is cleared and the entry stands, with an optional note.
+// Approving the removal of your OWN time away is the same self-dealing as
+// approving your own request — it just arrives by a different door — so the
+// Associate Admin rule applies here too.
+async function handleRemovalDecision(supa, body, res, actor, approve) {
+  const { id, decision_note } = body || {};
+  if (!id) return send(res, 400, { error: 'invalid_payload' });
+
+  const { data: entry, error: gErr } = await supa
+    .from('calendar_entries')
+    .select('*, team_members(name)')
+    .eq('id', id)
+    .maybeSingle();
+  if (gErr) throw gErr;
+  if (!entry) return send(res, 404, { error: 'not_found' });
+  if (!entry.removal_requested_at) {
+    return send(res, 400, { error: 'no_request', detail: 'There is no removal request on this entry.' });
+  }
+
+  if (!actor.caps.decideOwnTimeAway
+      && entry.member_id
+      && sameId(entry.member_id, actor.memberId)
+      && TIME_AWAY_TYPES.includes(entry.event_type)) {
+    return send(res, 403, {
+      error: 'self_decide_forbidden',
+      detail: 'You can’t decide your own removal request. An admin has to review it.',
+    });
+  }
+
+  const note = (typeof decision_note === 'string' && decision_note.trim())
+    ? decision_note.trim().slice(0, 500) : null;
+  const typeLabel = TYPE_LABEL[entry.event_type] || entry.event_type;
+  const range = formatRange(entry.start_date, entry.end_date);
+
+  if (approve) {
+    const { error } = await supa.from('calendar_entries').delete().eq('id', id);
+    if (error) throw error;
+  } else {
+    const { error } = await supa
+      .from('calendar_entries')
+      .update({ removal_requested_at: null, removal_reason: null, decision_note: note })
+      .eq('id', id);
+    if (error) throw error;
+  }
+
+  logAdminAction(supa, {
+    actor: actor.email,
+    action: approve ? 'removal_approved' : 'removal_denied',
+    target_type: 'calendar_entry', target_id: id,
+    payload: {
+      member_id: entry.member_id, event_type: entry.event_type,
+      reason: entry.removal_reason, actor_role: actor.role,
+    },
+  });
+
+  if (entry.member_id) {
+    let bodyTxt = approve
+      ? `Your ${typeLabel} ${range} was removed`
+      : `Your ${typeLabel} ${range} stays on the calendar`;
+    if (note) bodyTxt += ` — "${note.length > 120 ? note.slice(0, 117) + '…' : note}"`;
+    sendPush({
+      recipientType: 'member',
+      memberId: entry.member_id,
+      payload: {
+        title: approve ? 'Time away removed' : 'Removal declined',
+        body: bodyTxt,
+        tag: `rmdec-${id}`,
+        entryId: approve ? undefined : id,
+        url: approve ? '/index.html' : `/index.html?entry=${id}`,
+        badge_count: 1,
+      },
+    }).catch(err => console.error('push removal decision', err));
+  }
+
+  return send(res, 200, { ok: true, removed: approve });
 }
 
 function addDay(ymd, delta) {
