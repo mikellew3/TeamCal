@@ -257,7 +257,12 @@ async function loadOwnEntry(supa, member, id, res) {
   if (!id) { send(res, 400, { error: 'missing_id' }); return null; }
   const { data: entry, error } = await supa
     .from('calendar_entries')
-    .select('id, member_id, event_type, start_date, end_date, status, removal_requested_at')
+    // select('*') rather than naming removal_requested_at: if this ships
+    // before the migration, naming a column that doesn't exist yet errors
+    // and takes the EXISTING withdraw flow down with it. With '*' the field
+    // is simply absent, reads as undefined, and withdraw keeps working —
+    // only the new removal request is unavailable until the migration runs.
+    .select('*')
     .eq('id', id)
     .maybeSingle();
   if (error) { console.error('own entry fetch', error); send(res, 500, { error: 'server_error' }); return null; }
