@@ -923,11 +923,11 @@
     <form id="force-pw-form">
       <div style="margin-bottom:14px;">
         <label for="force-pw-new" style="display:block;font-size:10px;letter-spacing:0.10em;text-transform:uppercase;color:#6b7780;font-weight:600;margin-bottom:5px;">New password</label>
-        <input id="force-pw-new" type="password" minlength="8" autocomplete="new-password" required style="width:100%;border:1px solid rgba(26,42,51,0.28);padding:8px 11px;font-family:Inter;font-size:13px;border-radius:2px;box-sizing:border-box;" />
+        <input id="force-pw-new" type="password" autocomplete="new-password" required style="width:100%;border:1px solid rgba(26,42,51,0.28);padding:8px 11px;font-family:Inter;font-size:13px;border-radius:2px;box-sizing:border-box;" />
       </div>
       <div style="margin-bottom:14px;">
         <label for="force-pw-confirm" style="display:block;font-size:10px;letter-spacing:0.10em;text-transform:uppercase;color:#6b7780;font-weight:600;margin-bottom:5px;">Confirm password</label>
-        <input id="force-pw-confirm" type="password" minlength="8" autocomplete="new-password" required style="width:100%;border:1px solid rgba(26,42,51,0.28);padding:8px 11px;font-family:Inter;font-size:13px;border-radius:2px;box-sizing:border-box;" />
+        <input id="force-pw-confirm" type="password" autocomplete="new-password" required style="width:100%;border:1px solid rgba(26,42,51,0.28);padding:8px 11px;font-family:Inter;font-size:13px;border-radius:2px;box-sizing:border-box;" />
       </div>
       <button type="submit" id="force-pw-btn" style="width:100%;padding:11px 14px;background:#1f6b6b;color:#fff;border:1px solid #1f6b6b;font-family:Inter;font-size:13px;font-weight:600;letter-spacing:0.02em;border-radius:2px;cursor:pointer;">Set Password &amp; Continue</button>
       <div id="force-pw-msg" style="font-size:12px;margin-top:12px;color:#b54545;"></div>
@@ -1516,6 +1516,7 @@
       <div class="modal-actions" style="margin-top:18px;">
         <button type="button" class="ghost" id="btn-members-close">Close</button>
         <button type="button" class="ghost" id="btn-members-refresh">Refresh</button>
+        <button type="button" class="danger" id="btn-members-reset-all" hidden>Reset Everyone’s Password</button>
       </div>
     </div>
   </div>
@@ -2034,6 +2035,7 @@
       document.getElementById('btn-manage-members').onclick = openMembersModal;
       document.getElementById('btn-members-close').onclick   = () => closeModal('members-backdrop');
       document.getElementById('btn-members-refresh').onclick = loadMembersList;
+      document.getElementById('btn-members-reset-all').onclick = resetAllPasswords;
       document.getElementById('btn-newm-create').onclick     = createMemberDirectly;
       document.getElementById('btn-editmember-cancel').onclick = () => closeModal('editmember-backdrop');
       document.getElementById('btn-editmember-save').onclick   = saveEditMember;
@@ -4641,7 +4643,10 @@
       const msg     = document.getElementById('force-pw-msg');
       const btn     = document.getElementById('force-pw-btn');
       msg.textContent = '';
-      if (!newPw || newPw.length < 8) { msg.textContent = 'Password must be at least 8 characters.'; return; }
+      // No complexity or length rules of our own — whatever they want. Supabase
+      // still enforces its project-level minimum (Authentication → Policies),
+      // and updateUser's own message is surfaced verbatim if it refuses.
+      if (!newPw) { msg.textContent = 'Enter a password.'; return; }
       if (newPw !== confirm) { msg.textContent = 'Passwords do not match.'; return; }
       btn.disabled = true;
       try {
@@ -4978,6 +4983,9 @@
           btn.onclick = () => handleMemberAction(btn.dataset.act, btn.dataset.id, btn);
         });
 
+        const resetAllBtn = document.getElementById('btn-members-reset-all');
+        if (resetAllBtn) resetAllBtn.hidden = !isFullAdmin();
+
         // Update top-of-page admin pending counter.
         const badge = document.getElementById('admin-pending-members');
         const cnt   = document.getElementById('admin-pending-members-count');
@@ -5090,6 +5098,55 @@
       });
       const j = await r.json().catch(() => ({}));
       return (j.members || []).find(m => m.id === id);
+    }
+
+    // One-time bulk reset. Elevated accounts and you are left alone — a
+    // password the whole team knows is fine on a member account for the hour
+    // it takes them to log in, but on an approver's account it hands over
+    // decisions, FMLA visibility and role changes.
+    async function resetAllPasswords() {
+      const activeMembers = state.members.filter(m => m.active);
+      const targets = activeMembers.filter(m => m.role === 'member' && m.id !== state.me?.id);
+      const skipped = activeMembers.filter(m => m.role !== 'member' || m.id === state.me?.id);
+
+      openConfirm({
+        eyebrow: 'Bulk Reset',
+        title: `Reset ${targets.length} password${targets.length === 1 ? '' : 's'}?`,
+        sub: 'Everyone gets the temporary password below and must choose their own the next time they open the calendar.',
+        bodyHtml: `
+          <div class="field">
+            <label for="reset-all-pw">Temporary password</label>
+            <input id="reset-all-pw" type="text" value="surgerypa" autocomplete="off" />
+          </div>
+          <div style="font-size:11px;color:var(--ink-2);line-height:1.5;">
+            <strong>${targets.length}</strong> member account${targets.length === 1 ? '' : 's'} will be reset.
+            ${skipped.length ? `<br><strong>Left alone:</strong> ${skipped.map(m => escapeHtml(m.name.split(' ')[0])).join(', ')} — admin accounts and you. Reset those individually.` : ''}
+            <br><br>Anyone currently signed in stays signed in and is prompted on next load.
+            Anyone signed out needs this temporary password to get back in.
+          </div>`,
+        confirmText: 'Reset Them',
+        danger: true,
+        onConfirm: async () => {
+          const password = (document.getElementById('reset-all-pw')?.value || '').trim();
+          if (password.length < 8) { toast('Temporary password must be at least 8 characters.', 'error'); return; }
+          try {
+            const r = await fetch('/api/admin-member-action', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: state.adminToken, action: 'reset_all_passwords', password }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (r.status === 401) { adminTokenExpired(); return; }
+            if (!r.ok) { toast(j.detail || j.error || 'Reset failed.', 'error'); return; }
+            const failedNote = j.failed?.length ? ` ${j.failed.length} failed — check the console.` : '';
+            if (j.failed?.length) console.error('bulk reset failures', j.failed);
+            toast(`${j.reset_count} password${j.reset_count === 1 ? '' : 's'} reset.${failedNote}`, j.failed?.length ? 'error' : 'success');
+            await loadMembersList();
+          } catch (err) {
+            console.error('resetAllPasswords', err);
+            toast('Reset failed. Try again.', 'error');
+          }
+        },
+      });
     }
 
     async function saveEditMember() {

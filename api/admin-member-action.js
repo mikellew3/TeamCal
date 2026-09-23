@@ -29,6 +29,7 @@ export default async function handler(req, res) {
       case 'reactivate':     return await setActive(supa, body, res, true, actor);
       case 'update':         return await update(supa, body, res, actor);
       case 'reset_password': return await resetPassword(supa, body, res, actor);
+      case 'reset_all_passwords': return await resetAllPasswords(supa, body, res, actor);
       case 'delete':         return await hardDelete(supa, body, res, actor);
       default:               return send(res, 400, { error: 'unknown_action' });
     }
@@ -223,6 +224,72 @@ async function hardDelete(supa, body, res, actor) {
   if (error) throw error;
   logAdminAction(supa, { actor: actor.email, action: 'member_delete', target_type: 'team_member', target_id: id, payload: { auth_user_id: row.auth_user_id } });
   return send(res, 200, { ok: true });
+}
+
+// One-time bulk reset: put every member on a shared temporary password and
+// force each of them to choose their own on next load.
+//
+// Elevated accounts are EXCLUDED by default and the caller is always
+// excluded. A team-wide password is fine for a member account — worst case
+// during the window is someone reads a colleague's calendar — but on an
+// admin account it means anyone on the team can sign in as an approver,
+// decide their own time away, read everyone's FMLA and sick entries, and
+// change roles. include_admins is there if you really mean it.
+async function resetAllPasswords(supa, body, res, actor) {
+  if (!actor.caps.manageRoles) {
+    return send(res, 403, {
+      error: 'forbidden',
+      detail: 'Only a full Admin can reset everyone’s password.',
+    });
+  }
+  const password = body?.password || '';
+  if (password.length < 8) return send(res, 400, { error: 'invalid_password' });
+  const includeAdmins = body?.include_admins === true;
+
+  const { data: members, error } = await supa
+    .from('team_members')
+    .select('id, name, email, role, active, auth_user_id')
+    .eq('active', true);
+  if (error) throw error;
+
+  const targets = (members || []).filter(m =>
+    m.auth_user_id
+    && !sameId(m.id, actor.memberId)
+    && (includeAdmins || !isAdminRole(m.role)));
+
+  // Each reset is a separate auth API round-trip. Guard the serverless time
+  // budget rather than half-finishing and reporting success.
+  if (targets.length > 40) {
+    return send(res, 400, { error: 'too_many', detail: 'Too many accounts to reset in one request.' });
+  }
+
+  const reset = [], failed = [];
+  for (const m of targets) {
+    const { error: pwErr } = await supa.auth.admin.updateUserById(m.auth_user_id, { password });
+    if (pwErr) { failed.push({ name: m.name, email: m.email, reason: pwErr.message }); continue; }
+    const { error: flagErr } = await supa
+      .from('team_members').update({ must_change_password: true }).eq('id', m.id);
+    if (flagErr) { failed.push({ name: m.name, email: m.email, reason: 'flag not set' }); continue; }
+    reset.push({ name: m.name, email: m.email });
+  }
+
+  const skippedAdmins = (members || [])
+    .filter(m => isAdminRole(m.role) && !sameId(m.id, actor.memberId) && !includeAdmins)
+    .map(m => m.name);
+
+  logAdminAction(supa, {
+    actor: actor.email, action: 'member_reset_all_passwords',
+    target_type: 'team_member', target_id: null,
+    payload: { reset: reset.length, failed: failed.length, include_admins: includeAdmins, actor_role: actor.role },
+  });
+
+  return send(res, 200, {
+    ok: true,
+    reset_count: reset.length,
+    reset,
+    failed,
+    skipped_admins: skippedAdmins,
+  });
 }
 
 // An Associate Admin must not perform account actions against an admin-role
