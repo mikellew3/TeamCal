@@ -1791,7 +1791,12 @@
         }
 
         // Force password change on first sign-in for admin-created accounts.
-        if (state.me.must_change_password) {
+        // The bypass covers the case where the password WAS changed but the
+        // flag didn't clear (clear_must_change_password() matches on
+        // auth_user_id; a row without one updates zero rows and reports
+        // success). Without it that member would bounce back to this screen
+        // on every load with no way into the app.
+        if (state.me.must_change_password && !sessionStorage.getItem('pw_set_this_session')) {
           const bootMsg = document.getElementById('boot-msg');
           if (bootMsg) bootMsg.remove();
           document.getElementById('force-pw-screen').hidden = false;
@@ -1888,7 +1893,15 @@
     async function loadMembers() {
       const { data, error } = await state.supabase
         .from('team_members')
-        .select('id, name, email, color, active, auth_user_id, fte, role')
+        // select('*') on purpose. Enumerating columns here has now silently
+        // killed two features: `fte` (fixed in b4a509b) and
+        // `must_change_password` — the force-password-change screen read a
+        // field this query never fetched, so it was dead from the day it
+        // was written and no admin-created member was ever prompted.
+        // The column list buys nothing anyway: the RLS policy on
+        // team_members is `for select to authenticated using (true)`, so any
+        // signed-in member can already read every column directly.
+        .select('*')
         .order('name');
       if (error) throw error;
       state.members = data || [];
@@ -4634,8 +4647,12 @@
       try {
         const { error: upErr } = await state.supabase.auth.updateUser({ password: newPw });
         if (upErr) { msg.textContent = upErr.message || 'Could not update password.'; btn.disabled = false; return; }
+        // The password is changed at this point — that's the part that
+        // matters. Clearing the flag is bookkeeping, so a failure here must
+        // not strand them on this screen.
         const { error: rpcErr } = await state.supabase.rpc('clear_must_change_password');
-        if (rpcErr) { msg.textContent = 'Password set, but flag clear failed: ' + rpcErr.message; btn.disabled = false; return; }
+        if (rpcErr) console.error('clear_must_change_password', rpcErr);
+        sessionStorage.setItem('pw_set_this_session', '1');
         // Reload — easiest way to drop into the full app with fresh state.
         window.location.reload();
       } catch (err) {
