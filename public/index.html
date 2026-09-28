@@ -285,6 +285,61 @@
     table.grid td.num { text-align:right;font-variant-numeric:tabular-nums; }
     table.grid td.note { color:var(--muted);font-size:12px; }
 
+
+    /* ============ PRINT ============
+     * Two modes, set as a class on <body> before window.print():
+     *   printing-month — the calendar grid, landscape
+     *   printing-week  — the Week Builder modal, which is a sibling of #app
+     *                    so the two hide cleanly in opposite directions.
+     * Chrome/Safari drop background colours when printing unless told not
+     * to, which would flatten every chip to white — hence color-adjust.
+     */
+    @media print {
+      @page { size: landscape; margin: 9mm; }
+
+      body { background:#fff; }
+      * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+
+      /* Chrome */
+      .toolbar, .kpis, .admin-panel, .legend-actions, .sync-status,
+      #btn-prev, #btn-next, #btn-today, .cell-add, .cell-drawer-actions,
+      .add-btn, .week-nav, .modal-actions, .week-x, .row-arrow,
+      button { display:none !important; }
+
+      /* Month: the page, minus everything interactive. */
+      body.printing-month .modal-backdrop { display:none !important; }
+      body.printing-month #app { display:block !important; }
+
+      /* Week: the modal IS the page. */
+      body.printing-week #app { display:none !important; }
+      body.printing-week .modal-backdrop { display:none !important; }
+      body.printing-week #week-backdrop {
+        display:block !important;position:static;background:none;padding:0;
+      }
+      body.printing-week #week-backdrop .modal {
+        max-width:none;width:auto;max-height:none;overflow:visible;
+        box-shadow:none;border:none;padding:0;border-radius:0;
+      }
+      body.printing-week .week-grid { display:grid;grid-template-columns:repeat(5,1fr);gap:4mm; }
+      body.printing-week .week-col { break-inside:avoid;border:1px solid #1a2a33;padding:3mm; }
+
+      /* Nothing unapproved goes on a sheet of paper — a printout showing a
+       * pending request next to an approved one reads as settled, and
+       * someone will plan around it. */
+      .chip.pending, .chip.denied { display:none !important; }
+      .chip .rm-flag { display:none !important; }
+
+      .cal-grid { break-inside:avoid; }
+      .cal-cell { border:1px solid #c9ccd1 !important;min-height:22mm; }
+      .cal-cell.outside { opacity:0.45; }
+      .chip { border:1px solid #9aa0a6;font-size:8pt;page-break-inside:avoid; }
+      .cell-drawer { display:none !important; }
+
+      #print-footer { display:block !important; }
+      .legend { break-inside:avoid; }
+    }
+    #print-footer { display:none; }
+
     /* ============ MODALS ============ */
     .modal-backdrop {
       position:fixed;inset:0;background:rgba(26,42,51,0.55);
@@ -1003,6 +1058,9 @@
           <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div>
         </div>
         <div class="cal-grid" id="cal-grid"></div>
+        <div id="print-month-wrap" hidden style="margin-top:12px;text-align:right;">
+          <button type="button" class="ghost" id="btn-print-month">Print Month</button>
+        </div>
       </div>
     </div>
 
@@ -1141,8 +1199,14 @@
       <div id="week-grid" class="week-grid"></div>
       <div class="modal-actions">
         <button type="button" class="ghost" id="btn-week-close">Close</button>
+        <button type="button" class="ghost" id="btn-print-week">Print Week</button>
       </div>
     </div>
+  </div>
+
+  <div id="print-footer" style="margin-top:6mm;padding-top:3mm;border-top:1px solid #1a2a33;font-size:8pt;color:#3a4a52;display:flex;justify-content:space-between;">
+    <span id="print-footer-org">MG Surgical Associates · Team Calendar</span>
+    <span id="print-footer-stamp"></span>
   </div>
 
   <!-- PENDING REQUESTS MODAL (admin) -->
@@ -1968,6 +2032,8 @@
         : 'Associate Admin — everything except deciding your own time away';
       document.getElementById('btn-add-entry').hidden = !isAdmin;
       document.getElementById('admin-panel').hidden = !isAdmin;
+      const pmWrap = document.getElementById('print-month-wrap');
+      if (pmWrap) pmWrap.hidden = !isAdmin;
       if (isAdmin) refreshPendingMembersBadge();
     }
 
@@ -2020,6 +2086,8 @@
       document.getElementById('btn-discussions-close').onclick   = () => closeModal('discussions-backdrop');
       document.getElementById('btn-discussions-refresh').onclick = openDiscussionsModal;
       document.getElementById('btn-week-close').onclick       = () => closeModal('week-backdrop');
+      document.getElementById('btn-print-month').onclick      = () => printCalendar('month');
+      document.getElementById('btn-print-week').onclick       = () => printCalendar('week');
       document.getElementById('btn-week-close-x').onclick     = () => closeModal('week-backdrop');
       document.getElementById('btn-week-prev').onclick        = () => stepBuilderWeek(-1);
       document.getElementById('btn-week-next').onclick        = () => stepBuilderWeek(1);
@@ -3343,8 +3411,16 @@
       return wrap;
     }
 
+    // Absences that are nobody else's business on a shared sheet of paper.
+    // In the app these render normally, behind sign-in and role gates. A
+    // printout leaves all of that — it forwards, it sits on a desk, it gets
+    // photographed — so on paper they collapse to a neutral 'Out'. The team
+    // needs to know who isn't in; they don't need to know it's medical.
+    const PRINT_REDACTED_TYPES = new Set(['fmla', 'sick']);
+
     function renderChip(entry, dayContext) {
       const meta = TYPE_META[entry.event_type] || { tag:'?', label:'?', category:'time_away' };
+      const redactForPrint = state.printMode && PRINT_REDACTED_TYPES.has(entry.event_type);
       const catClass = meta.category === 'time_away' ? 'cat-time-away'
                      : meta.category === 'events'    ? 'cat-events'
                      : 'cat-coverage';
@@ -3390,8 +3466,12 @@
       // is still spoken for until Admin decides — but it shouldn't look
       // settled either.
       if (entry.removal_requested_at) chip.classList.add('removal-pending');
+      if (redactForPrint) {
+        // First name + 'Out'. No type tag — that's the part that discloses.
+        name = member ? `${member.name.split(' ')[0]} · Out` : 'Out';
+      }
       chip.innerHTML = `
-        ${meta.tag ? `<span class="type-tag">${meta.tag}</span>` : ''}
+        ${(meta.tag && !redactForPrint) ? `<span class="type-tag">${meta.tag}</span>` : ''}
         ${member ? `<span class="dot" style="--member-color:${color}"></span>` : ''}
         <span class="label">${escapeHtml(name)}</span>
         ${entry.removal_requested_at ? '<span class="rm-flag" title="Cancellation requested">⟲</span>' : ''}
@@ -3399,6 +3479,60 @@
       chip.addEventListener('click', (ev) => { ev.stopPropagation(); openDetail(entry, dayContext); });
       return chip;
     }
+
+    // Print goes through the browser's own Save-as-PDF rather than a PDF
+    // library: it's the same DOM, so it can't drift from the app the way a
+    // second renderer would, and it costs no serverless function.
+    //
+    // state.printMode changes what renderChip emits — medical absences are
+    // collapsed to a neutral 'Out'. See renderChip for why.
+    function printCalendar(kind) {
+      if (!isAdminMode()) return;
+      state.printMode = true;
+      document.body.classList.add(kind === 'week' ? 'printing-week' : 'printing-month');
+
+      const stamp = new Date().toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit',
+      });
+      const scope = kind === 'week'
+        ? document.getElementById('week-label')?.textContent
+        : document.getElementById('month-heading')?.textContent;
+      document.getElementById('print-footer-stamp').textContent =
+        `${scope || ''} · printed ${stamp} · approved entries only`;
+
+      // Re-render so the chips pick up print mode, then hand off.
+      if (kind === 'week') renderWeekBuilder(); else renderCalendar();
+      window.print();
+    }
+
+    // Cmd+P / ctrl+P / the browser's own Print menu bypass the buttons
+    // entirely — and a member can press them just as easily as an admin.
+    // Without this, that path would put real FMLA and Sick labels on paper,
+    // which is precisely what the redaction exists to prevent. Binding it to
+    // beforeprint makes 'medical absences read as Out on paper' a property
+    // of printing rather than of one button.
+    window.addEventListener('beforeprint', () => {
+      if (state.printMode) return;            // our own button already set up
+      state.printMode = true;
+      document.body.classList.add('printing-month');
+      const stamp = new Date().toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+      });
+      const scope = document.getElementById('month-heading')?.textContent || '';
+      const stampEl = document.getElementById('print-footer-stamp');
+      if (stampEl) stampEl.textContent = `${scope} · printed ${stamp} · approved entries only`;
+      renderCalendar();
+    });
+
+    function endPrintMode() {
+      if (!state.printMode) return;
+      state.printMode = false;
+      document.body.classList.remove('printing-month', 'printing-week');
+      renderCalendar();
+      if (document.getElementById('week-backdrop')?.classList.contains('open')) renderWeekBuilder();
+    }
+    window.addEventListener('afterprint', endPrintMode);
 
     function renderLegend() {
       const list = document.getElementById('legend-team');
