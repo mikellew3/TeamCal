@@ -287,70 +287,131 @@
 
 
     /* ============ PRINT ============
-     * Two modes, set as a class on <body> before window.print():
-     *   printing-month — the calendar grid, landscape
-     *   printing-week  — the Week Builder modal, which is a sibling of #app
-     *                    so the two hide cleanly in opposite directions.
-     * Chrome/Safari drop background colours when printing unless told not
-     * to, which would flatten every chip to white — hence color-adjust.
+     * These are keyed on a body class and deliberately live OUTSIDE
+     * @media print. fitToOnePage() measures the page before the browser
+     * has switched to print layout, so if these rules only applied in
+     * print media it would be measuring the screen layout and computing a
+     * zoom for a page that never existed. That is exactly what shipped in
+     * v83: the calendar came out shrunk into the top-left corner.
+     *
+     * The class is set immediately before window.print() and removed on
+     * afterprint, so on screen it's a flash at most.
      */
+    .printing-month, .printing-week {
+      background:#fff !important;
+    }
+    .printing-month html, .printing-week html,
+    html:has(body.printing-month), html:has(body.printing-week) {
+      height:auto !important;min-height:0 !important;
+    }
+    body.printing-month, body.printing-week {
+      height:auto !important;min-height:0 !important;margin:0 !important;padding:0 !important;
+    }
+
+    /* Interactive furniture never reaches paper. */
+    body.printing-month .toolbar,   body.printing-week .toolbar,
+    body.printing-month .kpis,      body.printing-week .kpis,
+    body.printing-month .admin-panel, body.printing-week .admin-panel,
+    body.printing-month .sync-status, body.printing-week .sync-status,
+    body.printing-month .footer,    body.printing-week .footer,
+    body.printing-month button,     body.printing-week button,
+    body.printing-month .cell-add,  body.printing-week .cell-add,
+    body.printing-month .cell-drawer, body.printing-week .cell-drawer,
+    body.printing-month .week-nav,  body.printing-week .week-nav,
+    body.printing-month .modal-actions, body.printing-week .modal-actions,
+    body.printing-month .modal-sub, body.printing-week .modal-sub,
+    body.printing-month .week-x,    body.printing-week .week-x {
+      display:none !important;
+    }
+
+    /* Month: the page. Week: the modal. Each hides the other. */
+    body.printing-month .modal-backdrop { display:none !important; }
+    body.printing-week  #app { display:none !important; }
+    body.printing-week  .modal-backdrop { display:none !important; }
+    body.printing-week  #week-backdrop {
+      display:block !important;position:static !important;background:none !important;
+      padding:0 !important;inset:auto !important;
+    }
+    body.printing-week  #week-backdrop .modal {
+      max-width:none !important;max-height:none !important;overflow:visible !important;
+      box-shadow:none !important;border:none !important;padding:0 !important;
+      border-radius:0 !important;margin:0 !important;
+    }
+
+    /* The print root is laid out at an explicit width so measurement matches
+     * the paper, not the browser window. fitToOnePage widens it as it zooms
+     * out so the result always FILLS the page rather than shrinking into a
+     * corner. */
+    body.printing-month #app,
+    body.printing-week  #week-backdrop .modal {
+      width:var(--print-w, 988px) !important;
+      max-width:none !important;margin:0 !important;
+    }
+    body.printing-month .page { padding:0 !important; }
+
+    /* Nothing undecided goes on paper — a pending request sitting beside an
+     * approved one reads as settled, and someone plans around it. */
+    body.printing-month .chip.pending, body.printing-week .chip.pending,
+    body.printing-month .chip.denied,  body.printing-week .chip.denied,
+    body.printing-month .chip .rm-flag, body.printing-week .chip .rm-flag {
+      display:none !important;
+    }
+
+    /* Everything below buys vertical space, which converts directly into a
+     * higher zoom and therefore readable text. The v83 output sat at 0.58
+     * mostly because of an empty sixth week row and screen-sized cells. */
+    body.printing-month .cell { min-height:52px !important;padding:3px 5px 4px !important; }
+
+    /* The week sheet is five columns and little else, so without a floor it
+     * prints as a strip across the top third of the page. Stretch it to fill;
+     * a dense week grows past this and the zoom pass takes over. */
+    body.printing-week .week-grid { min-height:520px !important;align-items:stretch !important; }
+    body.printing-week .week-col { display:flex !important;flex-direction:column !important; }
+    body.printing-week .week-col .chips { flex:1 1 auto !important; }
+    /* 'Week Builder' is what the tool is called in the app; it isn't what
+     * this sheet is. */
+    body.printing-week #week-title, body.printing-week #week-backdrop > .modal > .eyebrow { display:none !important; }
+    body.printing-week #week-print-title { display:block !important; }
+    body.printing-month .mast-r, body.printing-week .mast-r,
+    body.printing-month .sub,    body.printing-week .sub,
+    body.printing-month .mast-meta, body.printing-week .mast-meta,
+    body.printing-month .section-head .eyebrow { display:none !important; }
+    body.printing-month .masthead, body.printing-week .masthead {
+      padding:0 0 4px !important;margin:0 0 6px !important;border-bottom:1px solid var(--ink);
+    }
+    body.printing-month h1, body.printing-week h1 { font-size:15px !important;margin:0 !important; }
+    /* '#month-heading' already names the month; the section head above it
+     * says the same thing twice and the month is in the footer as well. */
+    body.printing-month .section-head { display:none !important; }
+    body.printing-month .mlabel { font-size:11pt !important;font-weight:600; }
+    /* Category and status keys explain the app to someone using the app.
+     * On a handout the only lookup anyone needs is whose colour is whose. */
+    body.printing-month .legend-grid > .legend-block:nth-child(1),
+    body.printing-month .legend-grid > .legend-block:nth-child(2) { display:none !important; }
+    body.printing-month .legend-grid { grid-template-columns:1fr !important;gap:0 !important; }
+    body.printing-month #legend-team {
+      display:grid !important;grid-template-columns:repeat(6,1fr) !important;gap:1px 8px !important;
+    }
+    body.printing-month .legend { margin-top:6px !important;padding-top:5px !important; }
+    body.printing-month .legend-head, body.printing-month .legend-col-head { display:none !important; }
+    body.printing-month .legend-list { gap:1px 10px !important; }
+    body.printing-month .legend-item { font-size:7.5pt !important; }
+    body.printing-month .cal-cell, body.printing-week .week-col {
+      break-inside:avoid;page-break-inside:avoid;
+    }
+    body.printing-month .cal-grid { break-inside:avoid; }
+    body.printing-month #print-footer, body.printing-week #print-footer {
+      display:flex !important;
+    }
+
+    #print-footer { display:none; }
+
     @media print {
       @page { size: landscape; margin: 9mm; }
-
-      body { background:#fff; }
+      /* Chrome and Safari drop background colours when printing unless told
+       * otherwise, which would flatten every chip to white. */
       * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-
-      /* Without this the document keeps a viewport-sized min-height and
-       * paginates to two pages even when the content clearly fits. */
-      html, body { height:auto !important; min-height:0 !important; margin:0 !important; padding:0 !important; }
-      .page { max-width:none !important;padding:0 !important;margin:0 !important; }
-
-      /* The print root is laid out at the real printable width (Letter
-       * landscape at 96dpi, less the 9mm margins). Measuring at screen width
-       * gives the wrong answer — the week modal in particular stretches to
-       * the viewport, so its width never responds to shrinking. */
-      body.printing-month #app,
-      body.printing-week #week-backdrop .modal { width:988px !important; }
-
-      /* Chrome */
-      .toolbar, .kpis, .admin-panel, .legend-actions, .sync-status,
-      #btn-prev, #btn-next, #btn-today, .cell-add, .cell-drawer-actions,
-      .add-btn, .week-nav, .modal-actions, .week-x, .row-arrow,
-      button { display:none !important; }
-
-      /* Month: the page, minus everything interactive. */
-      body.printing-month .modal-backdrop { display:none !important; }
-      body.printing-month #app { display:block !important; }
-
-      /* Week: the modal IS the page. */
-      body.printing-week #app { display:none !important; }
-      body.printing-week .modal-backdrop { display:none !important; }
-      body.printing-week #week-backdrop {
-        display:block !important;position:static;background:none;padding:0;
-      }
-      body.printing-week #week-backdrop .modal {
-        max-width:none;width:auto;max-height:none;overflow:visible;
-        box-shadow:none;border:none;padding:0;border-radius:0;
-      }
-      body.printing-week .week-grid { display:grid;grid-template-columns:repeat(5,1fr);gap:4mm; }
-      body.printing-week .week-col { break-inside:avoid;border:1px solid #1a2a33;padding:3mm; }
-
-      /* Nothing unapproved goes on a sheet of paper — a printout showing a
-       * pending request next to an approved one reads as settled, and
-       * someone will plan around it. */
-      .chip.pending, .chip.denied { display:none !important; }
-      .chip .rm-flag { display:none !important; }
-
-      .cal-grid { break-inside:avoid; }
-      .cal-cell { border:1px solid #c9ccd1 !important;min-height:22mm; }
-      .cal-cell.outside { opacity:0.45; }
-      .chip { border:1px solid #9aa0a6;font-size:8pt;page-break-inside:avoid; }
-      .cell-drawer { display:none !important; }
-
-      #print-footer { display:block !important; }
-      .legend { break-inside:avoid; }
     }
-    #print-footer { display:none; }
 
     /* ============ MODALS ============ */
     .modal-backdrop {
@@ -1201,6 +1262,10 @@
       <button type="button" class="week-x" id="btn-week-close-x" aria-label="Close">×</button>
       <div class="eyebrow">Admin · Week Builder</div>
       <h2 id="week-title">Week Builder</h2>
+      <div id="week-print-title" hidden>
+        <div class="eyebrow">MG Surgical Associates</div>
+        <h2 id="week-print-range">—</h2>
+      </div>
       <div class="modal-sub" id="week-sub">Tap + Add on any day to drop in an entry. Click a chip to edit. Use the arrows to step weeks.</div>
       <div class="week-nav">
         <button type="button" class="ghost" id="btn-week-prev">‹ Prev</button>
@@ -3153,6 +3218,9 @@
       // after whichever week contains state.expandedDay.
       for (let wi = 0; wi < 6; wi++) {
         const weekCells = cells.slice(wi * 5, wi * 5 + 5);
+        // On paper an all-outside week is pure waste, and the space it costs
+        // comes straight out of the legibility of every other row.
+        if (state.printMode && weekCells.every(c => c.outside)) continue;
         let weekContainsExpanded = false;
 
         for (const c of weekCells) {
@@ -3514,8 +3582,14 @@
         `${scope || ''} · printed ${stamp} · approved entries only`;
 
       // Re-render so the chips pick up print mode, then shrink to fit.
-      if (kind === 'week') renderWeekBuilder(); else renderCalendar();
-      fitToOnePage();
+      if (kind === 'week') {
+        renderWeekBuilder();
+        const rangeEl = document.getElementById('week-print-range');
+        if (rangeEl) rangeEl.textContent = `Team Calendar · ${scope || ''}`;
+      } else {
+        renderCalendar();
+      }
+      fitToOnePage(kind);
       window.print();
     }
 
@@ -3536,7 +3610,7 @@
       const stampEl = document.getElementById('print-footer-stamp');
       if (stampEl) stampEl.textContent = `${scope} · printed ${stamp} · approved entries only`;
       renderCalendar();
-      fitToOnePage();
+      fitToOnePage('month');
     });
 
     // A coverage calendar that spills onto a second page is worse than one
@@ -3552,32 +3626,45 @@
     // low. Below this nothing is readable at any page count.
     const PRINT_MIN_ZOOM = 0.3;
 
-    // Usable height for Letter landscape with the 9mm @page margin above.
-    // Measured, not derived: the arithmetic (816px at 96dpi less 68px of
-    // margin = 748) is optimistic by ~80px against what Chrome actually
-    // paginates at, which is ~671. Binary-searched against real PDFs — see
-    // the fit harness. 655 leaves a little headroom.
+    // Letter landscape at 96dpi: 1056 x 816, less the 9mm @page margins.
+    // The height is MEASURED rather than derived — the arithmetic says 748
+    // usable pixels, Chrome actually paginates at about 671. Binary-searched
+    // against real PDFs; 655 leaves headroom.
+    const PRINT_PAGE_W = 988;
     const PRINT_PAGE_H = 655;
 
-    function fitToOnePage() {
-      // Measure the DOCUMENT, not the calendar element. Pagination is driven
-      // by total document height — the footer sits outside #app, and an
-      // element that fits can still spill the page. Width needs no term: the
-      // print CSS pins the root to the printable width, so scaling the body
-      // can only ever make it narrower.
-      document.body.style.zoom = '1';
-      const h = document.body.scrollHeight;
-      const scale = h > PRINT_PAGE_H
-        ? Math.max(PRINT_MIN_ZOOM, (PRINT_PAGE_H / h) * 0.99)
-        : 1;
-      if (scale < 1) document.body.style.zoom = String(scale);
-      state.printZoom = scale;
+    function fitToOnePage(kind) {
+      const root = kind === 'week'
+        ? document.querySelector('#week-backdrop .modal')
+        : document.getElementById('app');
+      if (!root) return;
+
+      // Widen the layout as we zoom out, so the result FILLS the page instead
+      // of shrinking into the corner: rendered width is (PAGE_W / z) * z =
+      // PAGE_W at every zoom level. A wider layout also wraps less, so each
+      // pass gets shorter and this converges downward in two or three steps.
+      let z = 1;
+      for (let i = 0; i < 8; i++) {
+        document.documentElement.style.setProperty('--print-w', (PRINT_PAGE_W / z) + 'px');
+        document.body.style.zoom = String(z);
+        // getBoundingClientRect, NOT scrollHeight: scrollHeight is reported
+        // in the element's own unzoomed coordinate space, so it never
+        // reflects the zoom and the loop sees no progress — it just walks
+        // to the floor while the page is still too tall.
+        const h = document.body.getBoundingClientRect().height;
+        if (h <= PRINT_PAGE_H) break;
+        const next = Math.max(PRINT_MIN_ZOOM, z * (PRINT_PAGE_H / h) * 0.98);
+        if (next >= z) break;                          // converged or floored
+        z = next;
+      }
+      state.printZoom = z;
     }
 
     function endPrintMode() {
       if (!state.printMode) return;
       state.printMode = false;
       document.body.style.zoom = '';
+      document.documentElement.style.removeProperty('--print-w');
       document.body.classList.remove('printing-month', 'printing-week');
       renderCalendar();
       if (document.getElementById('week-backdrop')?.classList.contains('open')) renderWeekBuilder();
