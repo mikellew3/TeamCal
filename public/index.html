@@ -300,6 +300,18 @@
       body { background:#fff; }
       * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 
+      /* Without this the document keeps a viewport-sized min-height and
+       * paginates to two pages even when the content clearly fits. */
+      html, body { height:auto !important; min-height:0 !important; margin:0 !important; padding:0 !important; }
+      .page { max-width:none !important;padding:0 !important;margin:0 !important; }
+
+      /* The print root is laid out at the real printable width (Letter
+       * landscape at 96dpi, less the 9mm margins). Measuring at screen width
+       * gives the wrong answer — the week modal in particular stretches to
+       * the viewport, so its width never responds to shrinking. */
+      body.printing-month #app,
+      body.printing-week #week-backdrop .modal { width:988px !important; }
+
       /* Chrome */
       .toolbar, .kpis, .admin-panel, .legend-actions, .sync-status,
       #btn-prev, #btn-next, #btn-today, .cell-add, .cell-drawer-actions,
@@ -3501,8 +3513,9 @@
       document.getElementById('print-footer-stamp').textContent =
         `${scope || ''} · printed ${stamp} · approved entries only`;
 
-      // Re-render so the chips pick up print mode, then hand off.
+      // Re-render so the chips pick up print mode, then shrink to fit.
       if (kind === 'week') renderWeekBuilder(); else renderCalendar();
+      fitToOnePage();
       window.print();
     }
 
@@ -3523,11 +3536,48 @@
       const stampEl = document.getElementById('print-footer-stamp');
       if (stampEl) stampEl.textContent = `${scope} · printed ${stamp} · approved entries only`;
       renderCalendar();
+      fitToOnePage();
     });
+
+    // A coverage calendar that spills onto a second page is worse than one
+    // that's slightly small — the overflow is always the end of the month,
+    // and people read the first page and stop. So measure what we've got and
+    // scale until it fits.
+    //
+    // `zoom` rather than `transform: scale()`: zoom reflows, so the layout
+    // box actually shrinks and the browser paginates correctly. A transform
+    // only shrinks it optically — the element keeps its full height and the
+    // page still breaks.
+    // A tiny-but-complete calendar beats a truncated one, so the floor is
+    // low. Below this nothing is readable at any page count.
+    const PRINT_MIN_ZOOM = 0.3;
+
+    // Usable height for Letter landscape with the 9mm @page margin above.
+    // Measured, not derived: the arithmetic (816px at 96dpi less 68px of
+    // margin = 748) is optimistic by ~80px against what Chrome actually
+    // paginates at, which is ~671. Binary-searched against real PDFs — see
+    // the fit harness. 655 leaves a little headroom.
+    const PRINT_PAGE_H = 655;
+
+    function fitToOnePage() {
+      // Measure the DOCUMENT, not the calendar element. Pagination is driven
+      // by total document height — the footer sits outside #app, and an
+      // element that fits can still spill the page. Width needs no term: the
+      // print CSS pins the root to the printable width, so scaling the body
+      // can only ever make it narrower.
+      document.body.style.zoom = '1';
+      const h = document.body.scrollHeight;
+      const scale = h > PRINT_PAGE_H
+        ? Math.max(PRINT_MIN_ZOOM, (PRINT_PAGE_H / h) * 0.99)
+        : 1;
+      if (scale < 1) document.body.style.zoom = String(scale);
+      state.printZoom = scale;
+    }
 
     function endPrintMode() {
       if (!state.printMode) return;
       state.printMode = false;
+      document.body.style.zoom = '';
       document.body.classList.remove('printing-month', 'printing-week');
       renderCalendar();
       if (document.getElementById('week-backdrop')?.classList.contains('open')) renderWeekBuilder();
