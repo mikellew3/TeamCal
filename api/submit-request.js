@@ -5,7 +5,7 @@ import {
   isYmd, isHttpUrl,
   timeAwayConflicts, classifyConflict, effectiveTimeAwayRange,
   summerCapCheck, SUMMER_PTO_LIMIT_DAYS,
-  businessDaysBetween, formatRange,
+  businessDaysBetween, formatRange, restrictedDaysInRange,
 } from './_lib.js';
 import { sendPush } from './_push.js';
 
@@ -84,6 +84,23 @@ export default async function handler(req, res) {
   if (end_date < start_date) {
     return send(res, 400, { error: 'invalid_date_range' });
   }
+  // Admin allocates the day after Thanksgiving, Christmas Eve and New
+  // Year's Eve as a batch so the split is even, so they can't be claimed by
+  // request. Checked before anything else writes, and only ever on NEW
+  // submissions — entries already on these dates are untouched.
+  const restricted = restrictedDaysInRange(start_date, end_date);
+  if (restricted.length) {
+    const names = restricted.map(r => r.label);
+    const readable = names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    return send(res, 400, {
+      error: 'restricted_holiday',
+      detail: `Requests can't cover ${readable} — Admin assigns ${restricted.length === 1 ? 'that day' : 'those days'} for the whole team at once. Submit around ${restricted.length === 1 ? 'it' : 'them'}.`,
+      days: restricted,
+    });
+  }
+
   if (event_type === 'cme') {
     if (!isHttpUrl(conference_link)) {
       return send(res, 400, { error: 'conference_link_required', detail: 'CME requests require a valid conference link (http/https URL).' });

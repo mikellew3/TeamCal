@@ -444,6 +444,68 @@ export function summerWindow(year) {
   return { start: memorialDay(year), end: laborDay(year) };
 }
 
+// ============================================================
+// RESTRICTED HOLIDAYS
+// ============================================================
+// Three days a year that Admin allocates as a batch so the split is even,
+// rather than letting them go first-come-first-served:
+//
+//   - the day after Thanksgiving
+//   - Christmas Eve
+//   - New Year's Eve
+//
+// Members can't request them. Admin can still place entries on them, which
+// is the whole point — that's how they get assigned. Computed per year, so
+// this keeps working without anyone maintaining a list.
+//
+// Applies to NEW requests only. Anything already submitted or approved on
+// these dates is left exactly as it is.
+export const RESTRICTED_HOLIDAY_LABELS = {
+  thanksgiving_friday: 'the day after Thanksgiving',
+  christmas_eve: 'Christmas Eve',
+  new_years_eve: "New Year's Eve",
+};
+
+// nth occurrence of a weekday in a month. weekday: 0=Sun..6=Sat.
+function nthWeekdayOfMonth(year, monthIdx, weekday, n) {
+  const first = new Date(Date.UTC(year, monthIdx, 1));
+  const offset = (weekday - first.getUTCDay() + 7) % 7;
+  return new Date(Date.UTC(year, monthIdx, 1 + offset + (n - 1) * 7));
+}
+
+// US Thanksgiving: 4th Thursday of November.
+function thanksgiving(year) {
+  return nthWeekdayOfMonth(year, 10, 4, 4);
+}
+
+// { 'YYYY-MM-DD': key } for one calendar year.
+export function restrictedHolidays(year) {
+  const dayAfter = thanksgiving(year);
+  dayAfter.setUTCDate(dayAfter.getUTCDate() + 1);
+  return {
+    [dayAfter.toISOString().slice(0, 10)]: 'thanksgiving_friday',
+    [`${year}-12-24`]: 'christmas_eve',
+    [`${year}-12-31`]: 'new_years_eve',
+  };
+}
+
+// Restricted days falling inside an inclusive YYYY-MM-DD range.
+// Returns [{ day, key, label }], empty when the range is clear.
+export function restrictedDaysInRange(startYmd, endYmd) {
+  if (!startYmd || !endYmd || endYmd < startYmd) return [];
+  const out = [];
+  const firstYear = Number(startYmd.slice(0, 4));
+  const lastYear = Number(endYmd.slice(0, 4));
+  for (let y = firstYear; y <= lastYear; y++) {
+    for (const [day, key] of Object.entries(restrictedHolidays(y))) {
+      if (day >= startYmd && day <= endYmd) {
+        out.push({ day, key, label: RESTRICTED_HOLIDAY_LABELS[key] });
+      }
+    }
+  }
+  return out.sort((a, b) => a.day.localeCompare(b.day));
+}
+
 // Inclusive Mon–Fri count between two YYYY-MM-DD dates.
 export function businessDaysBetween(startYmd, endYmd) {
   if (!startYmd || !endYmd || endYmd < startYmd) return 0;

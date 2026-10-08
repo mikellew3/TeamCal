@@ -195,6 +195,17 @@
       cursor:default;
     }
     .cell:nth-child(5n) { border-right:none; }
+    /* Admin-allocated holidays. Hatched so they read as unavailable at a
+     * glance, but entries on them still show — Admin puts people there. */
+    .cell.restricted {
+      background-image:repeating-linear-gradient(
+        -45deg,transparent 0 6px,rgba(26,42,51,0.055) 6px 12px);
+    }
+    .cell.restricted .num::after {
+      content:'·  assigned';
+      font-family:'Inter';font-size:8px;font-weight:600;letter-spacing:0.06em;
+      text-transform:uppercase;color:var(--muted);margin-left:5px;
+    }
     .cell.outside { background:var(--paper-warm); }
     .cell.outside .num { color:#b8b8b0; }
     .cell .num {
@@ -1400,6 +1411,8 @@
             <input id="req-end" type="date" required />
           </div>
         </div>
+
+        <div id="req-restricted-warn" hidden style="margin-bottom:12px;padding:10px 12px;background:#fdf1e3;border:1px solid #e0c9a8;border-radius:3px;font-size:12px;color:#7a4e2d;line-height:1.45;"></div>
 
         <div class="conflict-preview" id="req-preview" hidden></div>
 
@@ -2651,6 +2664,60 @@
       fmla: { key: 'fmla', label: 'FMLA' },
     };
 
+    /* ============================================================
+     * RESTRICTED HOLIDAYS
+     * Mirrors restrictedDaysInRange() in api/_lib.js. The server is the
+     * enforcer — this exists so the days are visibly blocked on the
+     * calendar and the request is caught before it's submitted, rather
+     * than bouncing back as an error.
+     * ============================================================ */
+    const RESTRICTED_HOLIDAY_LABELS = {
+      thanksgiving_friday: 'the day after Thanksgiving',
+      christmas_eve: 'Christmas Eve',
+      new_years_eve: "New Year's Eve",
+    };
+
+    function nthWeekdayOfMonth(year, monthIdx, weekday, n) {
+      const first = new Date(Date.UTC(year, monthIdx, 1));
+      const offset = (weekday - first.getUTCDay() + 7) % 7;
+      return new Date(Date.UTC(year, monthIdx, 1 + offset + (n - 1) * 7));
+    }
+
+    function restrictedHolidays(year) {
+      const dayAfter = nthWeekdayOfMonth(year, 10, 4, 4);   // 4th Thursday of Nov
+      dayAfter.setUTCDate(dayAfter.getUTCDate() + 1);
+      return {
+        [dayAfter.toISOString().slice(0, 10)]: 'thanksgiving_friday',
+        [`${year}-12-24`]: 'christmas_eve',
+        [`${year}-12-31`]: 'new_years_eve',
+      };
+    }
+
+    function restrictedKeyFor(ymdStr) {
+      if (!ymdStr) return null;
+      return restrictedHolidays(Number(ymdStr.slice(0, 4)))[ymdStr] || null;
+    }
+
+    function restrictedDaysInRange(startYmd, endYmd) {
+      if (!startYmd || !endYmd || endYmd < startYmd) return [];
+      const out = [];
+      for (let y = Number(startYmd.slice(0, 4)); y <= Number(endYmd.slice(0, 4)); y++) {
+        for (const [day, key] of Object.entries(restrictedHolidays(y))) {
+          if (day >= startYmd && day <= endYmd) {
+            out.push({ day, key, label: RESTRICTED_HOLIDAY_LABELS[key] });
+          }
+        }
+      }
+      return out.sort((a, b) => a.day.localeCompare(b.day));
+    }
+
+    function restrictedPhrase(days) {
+      const names = days.map(d => d.label);
+      return names.length === 1
+        ? names[0]
+        : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    }
+
     function businessDayCount(startYmd, endYmd) {
       if (!startYmd || !endYmd || endYmd < startYmd) return 0;
       let count = 0;
@@ -3229,6 +3296,11 @@
           const dayStr = ymd(c.date);
           if (c.outside) cell.classList.add('outside');
           if (dayStr === todayStr) cell.classList.add('today');
+          const restrictedKey = restrictedKeyFor(dayStr);
+          if (restrictedKey && !c.outside) {
+            cell.classList.add('restricted');
+            cell.title = `${RESTRICTED_HOLIDAY_LABELS[restrictedKey]} — assigned by Admin, not requestable`;
+          }
           if (dayStr === state.expandedDay && !c.outside) {
             cell.classList.add('expanded');
             weekContainsExpanded = true;
@@ -3736,6 +3808,20 @@
     }
 
     function updateRequestPreview() {
+      const warnEl = document.getElementById('req-restricted-warn');
+      if (warnEl) {
+        const blocked = restrictedDaysInRange(
+          document.getElementById('req-start').value,
+          document.getElementById('req-end').value);
+        warnEl.hidden = blocked.length === 0;
+        if (blocked.length) {
+          warnEl.textContent = `This range covers ${restrictedPhrase(blocked)}. Admin assigns ${blocked.length === 1 ? 'that day' : 'those days'} for the whole team, so it can’t be requested — pick dates around ${blocked.length === 1 ? 'it' : 'them'}.`;
+        }
+      }
+      return updateRequestPreviewInner();
+    }
+
+    function updateRequestPreviewInner() {
       const start = document.getElementById('req-start').value;
       const end = document.getElementById('req-end').value;
       const previewEl = document.getElementById('req-preview');
@@ -3830,6 +3916,14 @@
         notes:      document.getElementById('req-notes').value.trim() || null,
         conference_link: eventType === 'cme' ? conf : null,
       };
+      // Caught here as well as on the server, so the answer arrives before
+      // they commit to the request rather than after.
+      const blocked = restrictedDaysInRange(body.start_date, body.end_date);
+      if (blocked.length) {
+        toast(`Can’t request ${restrictedPhrase(blocked)} — Admin assigns ${blocked.length === 1 ? 'that day' : 'those days'} for everyone at once.`, 'error');
+        btn.disabled = false;
+        return;
+      }
       try {
         const jwt = await freshJwt();
         const r = await fetch('/api/submit-request', {
