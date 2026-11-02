@@ -418,11 +418,48 @@ export function classifyConflict(dayCounts) {
 }
 
 // ============================================================
+// Summer PTO: a fair-share cap that RELEASES.
+//
+// Until the release date each year, every member is held to
+// SUMMER_PTO_LIMIT_DAYS business days inside the Memorial-to-Labor-Day
+// window, so nobody can take most of the summer before the rest of the team
+// has had a chance to ask. On the release date the ceiling rises to
+// SUMMER_PTO_LIMIT_AFTER_RELEASE and the leftover capacity opens up.
+//
+// The comparison is against the date the request is SUBMITTED, not the dates
+// being requested — the point is to give everyone an equal window in which to
+// claim their share, not to tie the limit to when the time off falls.
+//
+// Coverage rules apply at every stage regardless: the two-off block and the
+// consecutive-overlap block are unaffected by any of this, so the higher cap
+// is a ceiling, not a guarantee.
 // Summer PTO cap: 10 business days per member between Memorial
 // Day and Labor Day inclusive. Enforced starting summer 2027.
 // ============================================================
-export const SUMMER_PTO_LIMIT_DAYS = 10;
+export const SUMMER_PTO_LIMIT_DAYS = 10;           // before the release date
+export const SUMMER_PTO_LIMIT_AFTER_RELEASE = 20;  // on and after it
 export const SUMMER_RULE_YEAR_START = 2027;
+
+// Release date, as month/day applied to each summer's own year. March 1.
+// Change these two numbers to move it; nothing else needs touching.
+export const SUMMER_CAP_RELEASE_MONTH = 3;   // 1-12
+export const SUMMER_CAP_RELEASE_DAY = 1;
+
+export function summerCapReleaseDate(year) {
+  const m = String(SUMMER_CAP_RELEASE_MONTH).padStart(2, '0');
+  const d = String(SUMMER_CAP_RELEASE_DAY).padStart(2, '0');
+  return `${year}-${m}-${d}`;
+}
+
+// Which cap applies to `year`'s summer, as of `todayYmd`.
+export function summerCapFor(year, todayYmd = new Date().toISOString().slice(0, 10)) {
+  const released = todayYmd >= summerCapReleaseDate(year);
+  return {
+    cap: released ? SUMMER_PTO_LIMIT_AFTER_RELEASE : SUMMER_PTO_LIMIT_DAYS,
+    released,
+    releaseDate: summerCapReleaseDate(year),
+  };
+}
 
 // Memorial Day: last Monday of May.
 function memorialDay(year) {
@@ -561,8 +598,9 @@ export async function summerCapCheck(supa, memberId, startDate, endDate) {
     if (newDays === 0) continue;
     const currentUsed = await summerPtoUsed(supa, memberId, year, 'active');
     const wouldTotal = currentUsed + newDays;
-    if (wouldTotal > SUMMER_PTO_LIMIT_DAYS) {
-      return { year, cap: SUMMER_PTO_LIMIT_DAYS, currentUsed, newDays, wouldTotal, winStart, winEnd };
+    const { cap, released, releaseDate } = summerCapFor(year);
+    if (wouldTotal > cap) {
+      return { year, cap, released, releaseDate, currentUsed, newDays, wouldTotal, winStart, winEnd };
     }
   }
   return null;

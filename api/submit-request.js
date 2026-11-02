@@ -4,7 +4,7 @@ import {
   TIME_AWAY_TYPES, TYPE_LABEL,
   isYmd, isHttpUrl,
   timeAwayConflicts, classifyConflict, effectiveTimeAwayRange,
-  summerCapCheck, SUMMER_PTO_LIMIT_DAYS,
+  summerCapCheck, SUMMER_PTO_LIMIT_DAYS, SUMMER_PTO_LIMIT_AFTER_RELEASE,
   businessDaysBetween, formatRange, restrictedDaysInRange,
 } from './_lib.js';
 import { sendPush } from './_push.js';
@@ -130,20 +130,31 @@ export default async function handler(req, res) {
     });
   }
 
-  // Summer PTO cap (starting summer 2027): 10 business days per member
-  // between Memorial Day and Labor Day, inclusive. Hard stop.
+  // Summer PTO cap (starting summer 2027). Before the release date it's the
+  // fair-share limit; on and after it, the higher ceiling. Hard stop either
+  // way — but the message says when the cap lifts, because that's the first
+  // thing anyone asks next.
   if (event_type === 'pto') {
     try {
       const cap = await summerCapCheck(supa, member.id, start_date, end_date);
       if (cap) {
         return send(res, 409, {
           error: 'summer_cap',
-          detail: `Summer PTO cap: ${cap.cap} business days between Memorial Day (${cap.winStart}) and Labor Day (${cap.winEnd}). You already have ${cap.currentUsed} approved/pending; this request would add ${cap.newDays}, putting you at ${cap.wouldTotal}.`,
+          detail: [
+            `Summer ${cap.year} limit is ${cap.cap} business days between Memorial Day (${cap.winStart}) and Labor Day (${cap.winEnd}).`,
+            `You have ${cap.currentUsed} approved or pending; this would add ${cap.newDays}, putting you at ${cap.wouldTotal}.`,
+            cap.released
+              ? 'The fair-share period is over, so this is the full summer limit.'
+              : `The limit rises to ${SUMMER_PTO_LIMIT_AFTER_RELEASE} days on ${formatRange(cap.releaseDate, cap.releaseDate)}, once everyone has had a chance to claim their ${SUMMER_PTO_LIMIT_DAYS}.`,
+          ].join(' '),
           year: cap.year,
           current_used: cap.currentUsed,
           new_days: cap.newDays,
           would_total: cap.wouldTotal,
           cap: cap.cap,
+          released: cap.released,
+          release_date: cap.releaseDate,
+          cap_after_release: SUMMER_PTO_LIMIT_AFTER_RELEASE,
           window_start: cap.winStart,
           window_end: cap.winEnd,
         });
