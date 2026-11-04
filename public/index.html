@@ -1987,6 +1987,7 @@
 
         // Register service worker (PWA shell + push receiver).
         registerServiceWorker();
+        startLiveRefresh();
 
         // ?entry={id} on URL → auto-open detail when entry exists.
         autoOpenEntryFromUrl();
@@ -2062,6 +2063,19 @@
       state.members = data || [];
     }
 
+    // A coverage calendar left open all day was showing whatever was true
+    // when it was opened: nothing reloaded entries except a page load or an
+    // action the user took. Someone else's request landing, or an approval
+    // from another device, stayed invisible — and every KPI was computed off
+    // the stale set, so 'Off Today' could confidently report nobody while a
+    // chip for today sat on the calendar.
+    //
+    // Declared above loadEntries because that function assigns to it; a `let`
+    // below would be a temporal dead zone waiting for a reordering.
+    let lastLoadAt = 0;
+    const STALE_AFTER_MS = 60 * 1000;      // floor between reloads
+    const LIVE_POLL_MS = 5 * 60 * 1000;    // while sitting open and visible
+
     // PostgREST caps a single response at 1000 rows. Once calendar_entries
     // crossed that, an unpaginated `.order('start_date')` fetch silently
     // returned only the OLDEST 1000 rows — every current and future entry,
@@ -2089,6 +2103,7 @@
         if (all.length >= ENTRY_FETCH_CAP) { truncated = true; break; }
       }
       state.entries = all;
+      lastLoadAt = Date.now();
       const time = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
       setSync(`Last sync ${time} · ${all.length} entries${truncated ? ' (truncated)' : ''}`, truncated);
     }
@@ -2125,6 +2140,28 @@
       const pmWrap = document.getElementById('print-month-wrap');
       if (pmWrap) pmWrap.hidden = !isAdmin;
       if (isAdmin) refreshPendingMembersBadge();
+    }
+
+    // Reload if the data has had time to go stale. Cheap to call often —
+    // the floor stops rapid tab-switching from refetching on every focus.
+    async function refreshIfStale() {
+      if (document.hidden) return;
+      if (!state.supabase || !state.me) return;
+      if (Date.now() - lastLoadAt < STALE_AFTER_MS) return;
+      await refresh();
+    }
+
+    function startLiveRefresh() {
+      // visibilitychange, not just focus: iOS standalone PWAs — which is how
+      // most of the team runs this — fire focus unreliably when coming back
+      // from a locked screen or another app.
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) refreshIfStale().finally(updateAppBadge);
+      });
+      window.addEventListener('focus', () => { refreshIfStale(); });
+      // And a slow poll, because the case that started this was a desktop tab
+      // left open and watched — it never lost focus, so nothing above fires.
+      setInterval(() => { refreshIfStale(); }, LIVE_POLL_MS);
     }
 
     async function refreshPendingMembersBadge() {
@@ -4412,8 +4449,6 @@
         setInterval(() => { reg.update().catch(() => {}); }, 30 * 60 * 1000);
         window.addEventListener('focus', () => {
           reg.update().catch(() => {});
-          // App came back — sync the badge so it reflects current state
-          // even if a push silently bumped it while we were away.
           updateAppBadge();
         });
       } catch (e) {
