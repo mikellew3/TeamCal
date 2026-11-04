@@ -3212,7 +3212,13 @@
               && !offTodayIds.has(e.member_id)) {
             offTodayIds.add(e.member_id);
             const m = state.members.find(x => x.id === e.member_id);
-            if (m) offTodayNames.push(m.name);
+            // Always push something. Pushing only when the member row
+            // resolved meant an entry whose member_id doesn't match a
+            // loaded member disappeared from the count without a trace —
+            // the KPI read 0 while that person's chip sat on the calendar.
+            // Better to show the entry's own label, or 'Unknown', than to
+            // silently under-report who isn't here.
+            offTodayNames.push(m ? m.name : (e.title || 'Unknown'));
           }
         }
         offTodayNames.sort();
@@ -3232,7 +3238,8 @@
         countEl.textContent = '—';
         namesEl.textContent = 'Weekend — no coverage';
       } else {
-        countEl.textContent = offTodayNames.length;
+        // Count PEOPLE, not successfully-resolved names.
+        countEl.textContent = offTodayIds.size;
         namesEl.textContent = formatOffTodayNames(offTodayNames);
       }
     }
