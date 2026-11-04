@@ -828,8 +828,14 @@
       font-variant-numeric:tabular-nums;
     }
     .pto-curve .curve-lbl.mid { fill:var(--ink-2);font-weight:600; }
-    .pto-curve .curve-dot { stroke:var(--paper);stroke-width:1.5; }
-    .pto-curve .curve-dot:hover { stroke:var(--ink);stroke-width:2; }
+    .pto-curve .curve-dot circle { stroke:var(--paper);stroke-width:1.5; }
+    .pto-curve .curve-dot:hover circle { stroke:var(--ink);stroke-width:2; }
+    /* Every colour in the member palette is dark enough for white to read. */
+    .pto-curve .curve-ini {
+      font-family:'Inter';font-size:8.5px;font-weight:700;fill:#fff;
+      text-anchor:middle;dominant-baseline:central;letter-spacing:0.02em;
+      pointer-events:none;user-select:none;
+    }
     .pto-curve-key {
       font-size:10px;color:var(--muted);text-align:center;margin-top:2px;
       letter-spacing:0.02em;
@@ -3060,12 +3066,24 @@
     // it shows where the middle is and how wide the spread is. The dots are
     // the data; nothing about a person's position is smoothed or inferred.
     // Sitting high means near the average, out on a tail means unusual.
+    // 'Maeve Flynn' -> 'MF'. Single-word names give one letter rather than
+    // doubling it, so 'Cher' reads C and not CC.
+    function initialsOf(name) {
+      const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return '?';
+      const first = parts[0][0] || '';
+      const last = parts.length > 1 ? (parts[parts.length - 1][0] || '') : '';
+      return (first + last).toUpperCase();
+    }
+
     function buildPtoCurve(rows, mean, sd) {
       const wrap = document.createElement('div');
       wrap.className = 'pto-curve';
       if (rows.length < 3) return wrap;
 
-      const W = 680, H = 180, PAD_X = 20, TOP = 34, BASE = H - 34;
+      const W = 680, H = 190, PAD_X = 22, TOP = 40, BASE = H - 34;
+      const DOT_R = 9.5;          // large enough to carry two initials
+      const STACK = DOT_R * 2 + 2;
 
       // Axis span: ±3 SD covers essentially everyone, floored at 0 days since
       // negative PTO is meaningless. A level team gets a nominal span so the
@@ -3085,23 +3103,35 @@
         d += `${i ? 'L' : 'M'}${xFor(v).toFixed(1)},${yFor(v).toFixed(1)}`;
       }
 
-      // Stack dots that land on the same spot so nobody is hidden underneath
-      // somebody else.
-      const seen = new Map();
-      const dots = rows.map(r => {
-        const x = xFor(r.weightedPto);
-        const key = Math.round(x / 7);
-        const n = seen.get(key) || 0;
-        seen.set(key, n + 1);
-        // Stack upward, but never off the top of the viewBox.
-        return { r, x, y: Math.max(8, yFor(r.weightedPto) - n * 9) };
-      });
+      // Stack dots that would collide, so nobody hides underneath anyone
+      // else. Rounding x into fixed bins does NOT work: two dots either side
+      // of a bin boundary can be 1px apart and still get sorted into
+      // different bins, so both sit at level 0 and overlap. Place them in
+      // ascending x and take the lowest level that is clear.
+      const placed = [];     // last x used at each level
+      const dots = rows
+        .map(r => ({ r, x: xFor(r.weightedPto) }))
+        .sort((a, b) => a.x - b.x)
+        .map(({ r, x }) => {
+          let lvl = 0;
+          while (placed[lvl] !== undefined && x - placed[lvl] < DOT_R * 2 + 1) lvl++;
+          placed[lvl] = x;
+          return { r, x, y: yFor(r.weightedPto) - lvl * STACK };
+        });
+
+      // Don't clamp a tall stack to the ceiling — clamping made the top two
+      // dots land on the same pixel whenever four people shared a value.
+      // Grow the viewBox upward instead, so the chart gets taller and every
+      // dot keeps its own place.
+      const topMost = Math.min(TOP, ...dots.map(d => d.y)) - DOT_R - 6;
+      const vbY = Math.min(0, topMost);
+      const vbH = H - vbY;
 
       const ticks = flat ? [mean] : [mean - 2 * sd, mean - sd, mean, mean + sd, mean + 2 * sd]
         .filter(v => v >= lo - 0.01 && v <= hi + 0.01 && v >= 0);
 
       wrap.innerHTML = `
-        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img"
+        <svg viewBox="0 ${vbY.toFixed(1)} ${W} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" role="img"
              aria-label="Distribution of team PTO. Each dot is one person.">
           <path d="${d}" class="curve-line" />
           <path d="${d}L${xFor(hi).toFixed(1)},${BASE}L${xFor(lo).toFixed(1)},${BASE}Z" class="curve-fill" />
@@ -3113,11 +3143,12 @@
               ${Math.round(v * 10) / 10}d
             </text>`).join('')}
           ${dots.map(({ r, x, y }) => `
-            <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5.5"
-                    fill="${escapeHtml(r.member.color || '#1f6b6b')}"
-                    class="curve-dot" data-member="${escapeHtml(r.member.id)}">
+            <g class="curve-dot" data-member="${escapeHtml(r.member.id)}">
+              <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${DOT_R}"
+                      fill="${escapeHtml(r.member.color || '#1f6b6b')}" />
+              <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" class="curve-ini">${escapeHtml(initialsOf(r.member.name))}</text>
               <title>${escapeHtml(r.member.name)} — ${r.stats.pto.total} PTO day${r.stats.pto.total === 1 ? '' : 's'}${r.fte < 1 ? ` (≈ ${Math.round(r.weightedPto * 10) / 10} weighted)` : ''}</title>
-            </circle>`).join('')}
+            </g>`).join('')}
         </svg>
         <div class="pto-curve-key">Each dot is one person. Near the middle is typical; out on a tail is unusual.</div>
       `;
