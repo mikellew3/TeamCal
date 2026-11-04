@@ -793,9 +793,41 @@
     .pto-row .breakdown { font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums; }
     .pto-row .breakdown strong { color:var(--ink);font-size:13px; }
     .pto-bar { display:flex;align-items:center;gap:10px;font-size:11px;color:var(--ink-2); }
-    .pto-bar .track { flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden; }
-    .pto-bar .fill { height:100%;background:var(--accent);transition:width 200ms; }
-    .pto-bar .pct { min-width:38px;text-align:right;font-variant-numeric:tabular-nums; }
+    /* Centred on the team average: left of the midline is below average,
+       right is above. A bar pinned to the heaviest user had no fixed
+       meaning — one person's long holiday moved everybody else's number. */
+    .pto-bar .track {
+      flex:1;height:10px;background:var(--line);border-radius:5px;
+      position:relative;overflow:visible;
+    }
+    .pto-bar .track::before {
+      content:'';position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;
+      background:var(--ink-2);opacity:0.55;
+    }
+    .pto-bar .dev {
+      position:absolute;top:0;height:100%;border-radius:5px;transition:all 200ms;
+    }
+    .pto-bar .dev.above { background:var(--warn); }
+    .pto-bar .dev.below { background:var(--accent); }
+    .pto-bar .dev.even  { background:var(--ink-2);opacity:0.35; }
+    .pto-bar .pct {
+      min-width:62px;text-align:right;font-variant-numeric:tabular-nums;
+      font-weight:600;
+    }
+    .pto-bar .pct.above { color:var(--warn); }
+    .pto-bar .pct.below { color:var(--accent); }
+    .pto-dist-head {
+      display:flex;justify-content:space-between;align-items:baseline;
+      font-size:11px;color:var(--ink-2);margin:2px 0 10px;
+      padding-bottom:8px;border-bottom:1px solid var(--line);
+    }
+    .pto-dist-head .sd { color:var(--muted);font-size:10px;letter-spacing:0.04em; }
+    .pto-outlier {
+      font-size:9px;font-weight:600;letter-spacing:0.05em;padding:2px 6px;
+      border-radius:10px;margin-left:6px;
+    }
+    .pto-outlier.high { background:#f7e6e6;color:#8b2c3d; }
+    .pto-outlier.low  { background:#dfeceb;color:#1f6b6b; }
     .pto-row .arrow { color:var(--muted);font-size:13px; }
 
     .pto-detail-stats {
@@ -2893,7 +2925,20 @@
         const weightedPto = fte > 0 ? stats.pto.total / fte : stats.pto.total;
         return { member: m, stats, fte, weightedPto };
       });
-      const maxWeighted = Math.max(1, ...rows.map(r => r.weightedPto));
+      // Distribution, not a leaderboard. The old bar divided by the single
+      // heaviest user, which had no stable meaning: if one person took a long
+      // holiday everyone else's number fell without anyone changing anything.
+      // Centring on the team average answers the question actually being
+      // asked — who is unusually high or low — and holds still.
+      const weights = rows.map(r => r.weightedPto);
+      const mean = weights.length ? weights.reduce((a, b) => a + b, 0) / weights.length : 0;
+      const variance = weights.length
+        ? weights.reduce((a, b) => a + (b - mean) ** 2, 0) / weights.length
+        : 0;
+      const sd = Math.sqrt(variance);
+      // Full-scale deflection for the bar. Two SDs covers ~95% of a normal
+      // spread; the fallback keeps a flat team (sd 0) from dividing by zero.
+      const spread = sd > 0.05 ? sd * 2 : Math.max(1, mean || 1);
       rows.sort((a, b) => b.weightedPto - a.weightedPto);
 
       // Team totals row. FMLA hidden entirely from non-admin (protected leave).
@@ -2921,9 +2966,10 @@
       const legend = document.createElement('details');
       legend.className = 'pto-legend';
       legend.innerHTML = `
-        <summary>How the % is calculated</summary>
+        <summary>How this is calculated</summary>
         <div class="pto-legend-body">
-          <div><strong>Utilization %</strong> compares your PTO to the team's <em>heaviest user</em> — the top person reads as 100% and everyone else scales down. It is <strong>not</strong> a % of your accrued PTO balance.</div>
+          <div><strong>The bar</strong> is centred on the <em>team average</em>. Left of the line is below average, right is above, and the number is how many weighted days you differ by. It is <strong>not</strong> a % of your accrued PTO balance.</div>
+          <div><strong>Spread (SD)</strong> is how tightly the team clusters. Anyone more than 1.5 SD from the middle is flagged — that's the signal worth looking at, not a ranking.</div>
           <div><strong>FTE-weighted:</strong> a half-timer's day of PTO counts twice against the bar, so a 0.5 FTE with 5 days ranks the same as a 1.0 FTE with 10. Full-timers count 1:1.</div>
           <div><strong>Per diems excluded</strong> from the ranking — they don't accrue paid time off, so a comparison isn't meaningful.</div>
           <div><strong>Sick and Per Diem shifts</strong> are shown alongside PTO but do not affect the utilization bar${admin ? '' : '. FMLA is hidden from team view for privacy'}.</div>
@@ -2932,8 +2978,37 @@
       `;
       container.appendChild(legend);
 
+      if (rows.length >= 2) {
+        const head = document.createElement('div');
+        head.className = 'pto-dist-head';
+        const avgTxt = Math.round(mean * 10) / 10;
+        head.innerHTML = `
+          <span>Team average <strong>${avgTxt}</strong> weighted PTO days — bars show distance from it</span>
+          <span class="sd">${sd > 0.05 ? `spread ±${Math.round(sd * 10) / 10} (1 SD)` : 'everyone level'}</span>
+        `;
+        container.appendChild(head);
+      }
+
       for (const r of rows) {
-        const pct = Math.round((r.weightedPto / maxWeighted) * 100);
+        // Signed distance from the team average, scaled to the half-width of
+        // the track. Clamped so a single extreme person can't run off the end.
+        const delta = r.weightedPto - mean;
+        const z = sd > 0.05 ? delta / sd : 0;
+        const halfPct = Math.min(50, Math.abs(delta) / spread * 50);
+        const dir = Math.abs(delta) < 0.05 ? 'even' : (delta > 0 ? 'above' : 'below');
+        const devStyle = dir === 'above'
+          ? `left:50%;width:${halfPct}%;`
+          : dir === 'below'
+          ? `right:50%;width:${halfPct}%;`
+          : `left:calc(50% - 2px);width:4px;`;
+        const deltaTxt = dir === 'even'
+          ? 'average'
+          : `${delta > 0 ? '+' : '−'}${Math.round(Math.abs(delta) * 10) / 10}d`;
+        // Flag only genuine outliers — beyond 1.5 SD — and only when the team
+        // is big enough for a spread to mean anything.
+        const outlier = (rows.length >= 5 && Math.abs(z) >= 1.5)
+          ? `<span class="pto-outlier ${z > 0 ? 'high' : 'low'}">${z > 0 ? 'well above' : 'well below'}</span>`
+          : '';
         const fteBadge = r.fte === 0.5
           ? '<span style="background:#f4ecdc;color:#7a4e2d;font-size:9px;font-weight:600;padding:2px 6px;border-radius:10px;margin-left:6px;letter-spacing:0.05em;">0.5 FTE</span>'
           : '';
@@ -2944,9 +3019,9 @@
         const row = document.createElement('div');
         row.className = 'pto-row';
         row.innerHTML = `
-          <div class="name"><span class="dot" style="background:${escapeHtml(r.member.color || 'transparent')}"></span>${escapeHtml(r.member.name)}${fteBadge}</div>
+          <div class="name"><span class="dot" style="background:${escapeHtml(r.member.color || 'transparent')}"></span>${escapeHtml(r.member.name)}${fteBadge}${outlier}</div>
           <div class="breakdown">PTO: <strong>${r.stats.pto.takenDays}</strong> + <strong>${r.stats.pto.scheduledDays}</strong> = <strong>${r.stats.pto.total}</strong>${weightedHint}${r.stats.cme.total ? ` · CME ${r.stats.cme.total}` : ''}${r.stats.sick.total ? ` · Sick ${r.stats.sick.total}` : ''}${fmlaChunk}${r.stats.per_diem.count ? ` · PD ${r.stats.per_diem.count}` : ''}</div>
-          <div class="pto-bar"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
+          <div class="pto-bar"><div class="track"><div class="dev ${dir}" style="${devStyle}"></div></div><span class="pct ${dir}" title="${sd > 0.05 ? z.toFixed(2) + ' SD from the team average' : 'team is level'}">${deltaTxt}</span></div>
           <div class="arrow">›</div>
         `;
         row.onclick = () => { state.ptoReportMember = r.member.id; renderPtoReport(); };
@@ -2976,8 +3051,17 @@
           const f = Number(m.fte ?? 1);
           return f > 0 ? s.pto.total / f : s.pto.total;
         });
-      const maxWeighted = Math.max(1, ...allWeighted);
-      const pct = Math.round((myWeighted / maxWeighted) * 100);
+      // Same distribution the list view shows, so drilling in doesn't change
+      // the frame of reference under you.
+      const tMean = allWeighted.length
+        ? allWeighted.reduce((a, b) => a + b, 0) / allWeighted.length : 0;
+      const tSd = allWeighted.length
+        ? Math.sqrt(allWeighted.reduce((a, b) => a + (b - tMean) ** 2, 0) / allWeighted.length) : 0;
+      const myDelta = myWeighted - tMean;
+      const myZ = tSd > 0.05 ? myDelta / tSd : 0;
+      const standing = Math.abs(myDelta) < 0.05
+        ? 'right at the team average'
+        : `${Math.round(Math.abs(myDelta) * 10) / 10} day${Math.abs(myDelta) === 1 ? '' : 's'} ${myDelta > 0 ? 'above' : 'below'} the team average of ${Math.round(tMean * 10) / 10}`;
 
       // Stat cards. FMLA hidden for non-admin (federally protected leave).
       const admin = isAdminMode();
@@ -2986,7 +3070,7 @@
       cards.innerHTML = `
         <div class="pto-stat"><div class="lbl">PTO Taken</div><div class="val">${stats.pto.takenDays}</div><div class="sub">days, business</div></div>
         <div class="pto-stat"><div class="lbl">PTO Scheduled</div><div class="val">${stats.pto.scheduledDays}</div><div class="sub">days remaining ${year}</div></div>
-        <div class="pto-stat"><div class="lbl">PTO Total</div><div class="val">${stats.pto.total}</div><div class="sub">${myFte < 1 ? `≈ ${Math.round(myWeighted * 10) / 10} weighted · ` : ''}${pct}% of team max</div></div>
+        <div class="pto-stat"><div class="lbl">PTO Total</div><div class="val">${stats.pto.total}</div><div class="sub">${myFte < 1 ? `≈ ${Math.round(myWeighted * 10) / 10} weighted · ` : ''}${escapeHtml(standing)}${tSd > 0.05 ? ` (${myZ > 0 ? '+' : ''}${myZ.toFixed(1)} SD)` : ''}</div></div>
         <div class="pto-stat"><div class="lbl">CME</div><div class="val">${stats.cme.total}</div><div class="sub">${stats.cme.takenDays} taken · ${stats.cme.scheduledDays} scheduled</div></div>
         <div class="pto-stat"><div class="lbl">Sick</div><div class="val">${stats.sick.total}</div><div class="sub">${stats.sick.takenDays} taken · ${stats.sick.scheduledDays} scheduled</div></div>
         ${admin ? `<div class="pto-stat"><div class="lbl">FMLA</div><div class="val">${stats.fmla.total}</div><div class="sub">${stats.fmla.takenDays} taken · ${stats.fmla.scheduledDays} scheduled</div></div>` : ''}
