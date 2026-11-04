@@ -836,10 +836,6 @@
       text-anchor:middle;dominant-baseline:central;letter-spacing:0.02em;
       pointer-events:none;user-select:none;
     }
-    .pto-curve-key {
-      font-size:10px;color:var(--muted);text-align:center;margin-top:2px;
-      letter-spacing:0.02em;
-    }
     .pto-dist-head {
       display:flex;justify-content:space-between;align-items:baseline;
       font-size:11px;color:var(--ink-2);margin:2px 0 10px;
@@ -3150,7 +3146,6 @@
               <title>${escapeHtml(r.member.name)} — ${r.stats.pto.total} PTO day${r.stats.pto.total === 1 ? '' : 's'}${r.fte < 1 ? ` (≈ ${Math.round(r.weightedPto * 10) / 10} weighted)` : ''}</title>
             </g>`).join('')}
         </svg>
-        <div class="pto-curve-key">Each dot is one person. Near the middle is typical; out on a tail is unusual.</div>
       `;
 
       // Tapping a dot opens that member, same as tapping their row.
